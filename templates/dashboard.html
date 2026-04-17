@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Onsite Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f2f4f8;
+      padding: 28px 20px 42px;
+      color: #17202a;
+    }
+    a { color: #1264a3; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    header {
+      display: flex; justify-content: space-between; align-items: flex-end;
+      gap: 16px; flex-wrap: wrap; margin-bottom: 22px;
+    }
+    h1 { font-size: 1.7rem; }
+    .subtle { color: #667; font-size: .95rem; }
+    .toolbar {
+      display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+      margin-bottom: 22px;
+    }
+    .pill {
+      background: white; border-radius: 999px; padding: 8px 14px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.05); font-size: .92rem;
+    }
+    .grid {
+      display: grid; gap: 18px;
+      grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+      margin-bottom: 24px;
+    }
+    .site-card, .panel {
+      background: white; border-radius: 16px; padding: 18px;
+      box-shadow: 0 3px 14px rgba(0,0,0,.06);
+    }
+    .site-card h2, .panel h2 {
+      margin-bottom: 14px; font-size: 1rem; letter-spacing: .02em;
+      border-bottom: 2px solid #eef2f7; padding-bottom: 10px;
+    }
+    .site-card.ATL77 h2 { color: #1264a3; border-color: #1264a3; }
+    .site-card.ATL88 h2 { color: #2eb886; border-color: #2eb886; }
+    .site-card.ATL99 h2 { color: #e8912d; border-color: #e8912d; }
+    .site-card.ATL118 h2 { color: #d9485f; border-color: #d9485f; }
+    .site-card.REMOTE h2 { color: #6e44ff; border-color: #6e44ff; }
+    .site-card.OFF h2 { color: #999; border-color: #d6d6d6; }
+    .person {
+      display: flex; gap: 12px; align-items: center;
+      padding: 10px 0; border-bottom: 1px solid #f2f4f8;
+    }
+    .person:last-child { border-bottom: none; }
+    .person img, .avatar-placeholder {
+      width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
+    }
+    .avatar-placeholder {
+      background: #dce3f0; color: #4c6faf; display: flex;
+      align-items: center; justify-content: center; font-weight: 700;
+    }
+    .name { font-weight: 600; }
+    .meta { color: #7b8794; font-size: .76rem; margin-top: 2px; }
+    .empty { color: #9aa5b1; font-style: italic; }
+    .two-col {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 22px;
+    }
+    @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+    .timeline-user { margin-bottom: 14px; }
+    .timeline-events { margin-top: 8px; padding-left: 18px; }
+    .timeline-events li { margin: 4px 0; color: #566370; }
+  </style>
+  {% if is_today %}
+  <meta http-equiv="refresh" content="60">
+  {% endif %}
+</head>
+<body>
+  <header>
+    <div>
+      <h1>📍 Onsite Dashboard</h1>
+      <div class="subtle">{{ friendly_date }}{% if is_today %} · auto-refreshes every 60 seconds{% endif %}</div>
+    </div>
+    <div class="pill">
+      <a href="/dashboard?date={{ previous_day }}">← Previous day</a>
+      &nbsp;|&nbsp;
+      <a href="/dashboard?date={{ next_day }}">Next day →</a>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="pill">Viewing: <strong>{{ work_date }}</strong></div>
+    <div class="pill">Expected missing: <strong>{{ missing_people|length }}</strong></div>
+    <div class="pill">Not scheduled tracked users: <strong>{{ not_scheduled_people|length }}</strong></div>
+  </div>
+
+  <div class="grid">
+    {% for site, people in site_sections %}
+    <section class="site-card {{ site }}">
+      <h2>{{ emoji_map.get(site, '📍') }} {{ site }}</h2>
+      {% if people %}
+        {% for p in people %}
+        <div class="person">
+          {% if p.image_url %}
+            <img src="{{ p.image_url }}" alt="{{ p.display_name }}">
+          {% else %}
+            <div class="avatar-placeholder">{{ p.display_name[0] }}</div>
+          {% endif %}
+          <div>
+            <div class="name">{{ p.display_name }}</div>
+            <div class="meta">{{ p.updated_at }} · via {{ p.source }}</div>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty">No one checked in</div>
+      {% endif %}
+    </section>
+    {% endfor %}
+  </div>
+
+  <div class="two-col">
+    <section class="panel">
+      <h2>⏳ Expected today, not checked in</h2>
+      {% if missing_people %}
+        {% for p in missing_people %}
+        <div class="person">
+          {% if p.image_url %}
+            <img src="{{ p.image_url }}" alt="{{ p.display_name }}">
+          {% else %}
+            <div class="avatar-placeholder">{{ p.display_name[0] }}</div>
+          {% endif %}
+          <div><div class="name">{{ p.display_name }}</div></div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty">No one missing right now</div>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <h2>🗓️ Tracked but not scheduled</h2>
+      {% if not_scheduled_people %}
+        {% for p in not_scheduled_people %}
+        <div class="person">
+          {% if p.image_url %}
+            <img src="{{ p.image_url }}" alt="{{ p.display_name }}">
+          {% else %}
+            <div class="avatar-placeholder">{{ p.display_name[0] }}</div>
+          {% endif %}
+          <div><div class="name">{{ p.display_name }}</div></div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty">Everyone tracked is expected today</div>
+      {% endif %}
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2>🔄 Movement history for this date</h2>
+    {% if movements %}
+      {% for person in movements %}
+        <div class="timeline-user">
+          <div class="name">{{ person.display_name }}</div>
+          <ul class="timeline-events">
+            {% for event in person.events %}
+            <li>{{ event.checked_in_at }} → <strong>{{ event.site }}</strong> <span class="subtle">({{ event.source }})</span></li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">No movement history for this day yet</div>
+    {% endif %}
+  </section>
+</body>
+</html>
