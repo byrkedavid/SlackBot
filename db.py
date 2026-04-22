@@ -132,6 +132,17 @@ def set_schedule_override(user_id: str, work_date: str, status: str, note: str |
             (user_id, work_date, status, note),
         )
 
+def get_schedule_override(user_id: str, work_date: str):
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT status FROM schedule_overrides
+            WHERE slack_user_id = ? AND work_date = ?
+            """,
+            (user_id, work_date),
+        ).fetchone()
+    return row["status"] if row else None
+
 
 def record_checkin(
     user_id: str,

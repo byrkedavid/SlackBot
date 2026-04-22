@@ -4,6 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Onsite Dashboard</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -138,7 +139,7 @@
     </section>
 
     <section class="panel">
-      <h2>🗓️ Tracked but not scheduled</h2>
+      <h2>🗓️ Checked in but not scheduled today</h2>
       {% if not_scheduled_people %}
         {% for p in not_scheduled_people %}
         <div class="person">

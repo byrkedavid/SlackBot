@@ -41,7 +41,7 @@ SITE_EMOJI = {
 
 APP_HOME_SITES = ["ATL77", "ATL88", "ATL99", "ATL118", "REMOTE", "OFF"]
 
-# Optional admin Slack user IDs for future admin actions.
+# Check .env for admin user IDs
 ADMIN_USER_IDS = {
     user_id.strip()
     for user_id in os.environ.get("ADMIN_USER_IDS", "").split(",")

@@ -9,7 +9,8 @@ from flask import Flask
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
-from bot import RESET_HOUR
+from db import get_schedule_override
+
 from config import (
     ADMIN_USER_IDS,
     APP_HOME_SITES,
@@ -197,7 +198,15 @@ def compute_dashboard_context(work_date_value: str | None = None) -> dict:
             "custom_pattern": user.get("custom_pattern"),
             "is_active": user.get("is_active", 0),
         }
-        expected = is_expected_on_date(schedule, work_day)
+        override = get_schedule_override(user["slack_user_id"], work_date)
+
+        if override == "expected":
+            expected = True
+        elif override == "not_expected":
+            expected = False
+        else:
+            expected = is_expected_on_date(schedule, work_day)
+
         basic_user = {
             "slack_user_id": user["slack_user_id"],
             "display_name": user["display_name"],
@@ -269,8 +278,6 @@ def build_app_home(user_id: str):
         }
         if checkin and checkin.get("site") == site and checkin.get("work_date") == today_str():
             btn["style"] = "primary"
-        if now_local().hour < RESET_HOUR:
-            btn["style"] = "default"
         buttons.append(btn)
 
     return {
@@ -280,6 +287,7 @@ def build_app_home(user_id: str):
             {"type": "divider"},
             {"type": "section", "text": {"type": "mrkdwn", "text": status_text}},
             {"type": "section", "text": {"type": "mrkdwn", "text": schedule_text}},
+            {"type": "section", "text": {"type": "mrkdwn", "text": "Set schedule with `/onsite-schedule` command. Admins can override with `/onsite-admin`."}},
             {"type": "divider"},
             {"type": "section", "text": {"type": "mrkdwn", "text": "*Where are you today?*"}},
             {"type": "actions", "elements": buttons},
@@ -408,6 +416,246 @@ def handle_schedule(ack, body, client, logger):
     except Exception as exc:
         logger.exception("Error setting schedule")
         ack({"response_type": "ephemeral", "text": f"⚠️ Something went wrong: {exc}"})
+
+
+@slack_app.command("/onsite-admin")
+def handle_admin(ack, body, client, logger):
+    user_id = body["user_id"]
+
+    if not is_admin(user_id):
+        ack({"response_type": "ephemeral", "text": "❌ You are not an admin."})
+        return
+
+    ack()
+
+    users = get_all_users()
+
+    user_options = [
+        {
+            "text": {"type": "plain_text", "text": u["display_name"]},
+            "value": u["slack_user_id"]
+        }
+        for u in users
+    ]
+
+    modal = {
+        "type": "modal",
+        "callback_id": "admin_modal_submit",
+        "title": {"type": "plain_text", "text": "Admin Controls"},
+        "submit": {"type": "plain_text", "text": "Submit"},
+        "close": {"type": "plain_text", "text": "Cancel"},
+        "blocks": [
+            {
+            "type": "input",
+            "block_id": "user_block",
+            "label": {"type": "plain_text", "text": "Select User"},
+            "element": {
+                "type": "users_select",
+                "action_id": "user_select",
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": "Choose a workspace member"
+                }
+            }
+            },
+            {
+                "type": "input",
+                "block_id": "action_block",
+                "label": {"type": "plain_text", "text": "Action"},
+                "dispatch_action": True,
+                "element": {
+                    "type": "static_select",
+                    "action_id": "action_select",
+                    "options": [
+                        {"text": {"type": "plain_text", "text": "Check In"}, "value": "checkin"},
+                        {"text": {"type": "plain_text", "text": "Override Schedule"}, "value": "override"},
+                    ]
+                }
+            },
+            {
+                "type": "input",
+                "block_id": "site_block",
+                "label": {"type": "plain_text", "text": "Site"},
+                "element": {
+                    "type": "static_select",
+                    "action_id": "site_select",
+                    "options": [
+                        {"text": {"type": "plain_text", "text": s}, "value": s}
+                        for s in APP_HOME_SITES
+                    ]
+                }
+            },
+            {
+                "type": "input",
+                "block_id": "override_block",
+                "label": {"type": "plain_text", "text": "Override Type"},
+                "element": {
+                    "type": "static_select",
+                    "action_id": "override_select",
+                    "options": [
+                        {"text": {"type": "plain_text", "text": "Expected"}, "value": "expected"},
+                        {"text": {"type": "plain_text", "text": "Not Expected"}, "value": "not_expected"},
+                    ]
+                }
+            }
+        ]
+    }
+
+    client.views_open(
+    trigger_id=body["trigger_id"],
+    view=build_admin_modal(get_all_users(), selected_action=None)
+)
+    
+@slack_app.action("action_select")
+def handle_admin_action_select(ack, body, client, logger):
+    ack()
+
+    try:
+        selected_action = body["actions"][0]["selected_option"]["value"]
+        view = body["view"]
+
+        client.views_update(
+            view_id=view["id"],
+            hash=view["hash"],
+            view=build_admin_modal(get_all_users(), selected_action=selected_action),
+        )
+    except Exception:
+        logger.exception("Failed to update admin modal")
+
+
+def build_admin_modal(users, selected_action=None):
+    blocks = [
+        {
+            "type": "input",
+            "block_id": "user_block",
+            "label": {"type": "plain_text", "text": "Select User"},
+            "element": {
+                "type": "users_select",
+                "action_id": "user_select",
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": "Choose a workspace member"
+                }
+            }
+        },
+        {
+            "type": "input",
+            "block_id": "action_block",
+            "label": {"type": "plain_text", "text": "Action"},
+            "dispatch_action": True,
+            "element": {
+                "type": "static_select",
+                "action_id": "action_select",
+                "options": [
+                    {"text": {"type": "plain_text", "text": "Check In"}, "value": "checkin"},
+                    {"text": {"type": "plain_text", "text": "Override Schedule"}, "value": "override"},
+                ],
+                **(
+                    {
+                        "initial_option": {
+                            "text": {"type": "plain_text", "text": "Check In" if selected_action == "checkin" else "Override Schedule"},
+                            "value": selected_action,
+                        }
+                    }
+                    if selected_action else {}
+                )
+            }
+        },
+    ]
+
+    if selected_action == "checkin":
+        blocks.append(
+            {
+                "type": "input",
+                "block_id": "site_block",
+                "label": {"type": "plain_text", "text": "Site"},
+                "element": {
+                    "type": "static_select",
+                    "action_id": "site_select",
+                    "options": [
+                        {"text": {"type": "plain_text", "text": s}, "value": s}
+                        for s in APP_HOME_SITES
+                    ]
+                }
+            }
+        )
+    elif selected_action == "override":
+        blocks.append(
+            {
+                "type": "input",
+                "block_id": "override_block",
+                "label": {"type": "plain_text", "text": "Override Type"},
+                "element": {
+                    "type": "static_select",
+                    "action_id": "override_select",
+                    "options": [
+                        {"text": {"type": "plain_text", "text": "Expected"}, "value": "expected"},
+                        {"text": {"type": "plain_text", "text": "Not Expected"}, "value": "not_expected"},
+                    ]
+                }
+            }
+        )
+
+    return {
+        "type": "modal",
+        "callback_id": "admin_modal_submit",
+        "title": {"type": "plain_text", "text": "Admin Controls"},
+        "submit": {"type": "plain_text", "text": "Submit"},
+        "close": {"type": "plain_text", "text": "Cancel"},
+        "blocks": blocks,
+    }
+
+
+@slack_app.view("admin_modal_submit")
+def handle_admin_submit(ack, body, client, logger):
+    ack()
+
+    values = body["view"]["state"]["values"]
+    target_user = values["user_block"]["user_select"]["selected_user"]
+    action = values["action_block"]["action_select"]["selected_option"]["value"]
+
+    try:
+        if action == "checkin":
+            site = values["site_block"]["site_select"]["selected_option"]["value"]
+
+            display_name, image_url = fetch_user_profile(client, target_user)
+            upsert_user(target_user, display_name, image_url)
+
+            record_checkin(
+                target_user,
+                site,
+                today_str(),
+                now_local().isoformat(timespec="seconds"),
+                source="admin_modal"
+            )
+
+            msg = f"✅ Set <@{target_user}> to *{site}*"
+
+        elif action == "override":
+            override = values["override_block"]["override_select"]["selected_option"]["value"]
+
+            set_schedule_override(target_user, today_str(), override)
+
+            msg = f"✅ Override set for <@{target_user}> → *{override}*"
+
+        else:
+            msg = "Unknown action"
+
+        upsert_summary_message(client)
+
+        client.chat_postEphemeral(
+            channel=body["user"]["id"],
+            user=body["user"]["id"],
+            text=msg
+        )
+
+    except Exception as e:
+        logger.exception("Admin modal failed")
+        client.chat_postEphemeral(
+            channel=body["user"]["id"],
+            user=body["user"]["id"],
+            text=f"⚠️ Error: {e}"
+        )
 
 
 # ---- Flask dashboard -------------------------------------------------------
