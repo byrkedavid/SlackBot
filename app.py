@@ -9,6 +9,7 @@ from flask import Flask
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
+from bot import RESET_HOUR
 from config import (
     ADMIN_USER_IDS,
     APP_HOME_SITES,
@@ -268,6 +269,8 @@ def build_app_home(user_id: str):
         }
         if checkin and checkin.get("site") == site and checkin.get("work_date") == today_str():
             btn["style"] = "primary"
+        if now_local().hour < RESET_HOUR:
+            btn["style"] = "default"
         buttons.append(btn)
 
     return {
