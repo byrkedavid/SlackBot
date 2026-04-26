@@ -22,14 +22,20 @@ def home():
 @dashboard_bp.route("/dashboard")
 def dashboard():
     date_str = request.args.get("date")
-    context = compute_dashboard_context(date_str)
+    site_filter = request.args.getlist("site")
+    if not site_filter:
+        site_filter = None
+    context = compute_dashboard_context(date_str, site_filter=site_filter)
     return render_template("dashboard.html", **context)
 
 
 @dashboard_bp.route("/api/status")
 def api_status():
     date_str = request.args.get("date")
-    context = compute_dashboard_context(date_str)
+    site_filter = request.args.getlist("site")
+    if not site_filter:
+        site_filter = None
+    context = compute_dashboard_context(date_str, site_filter=site_filter)
     return jsonify({
         "work_date": context["work_date"],
         "is_today": context["is_today"],
@@ -42,7 +48,10 @@ def api_status():
 @dashboard_bp.route("/api/movements")
 def api_movements():
     date_str = request.args.get("date")
-    context = compute_dashboard_context(date_str)
+    site_filter = request.args.getlist("site")
+    if not site_filter:
+        site_filter = None
+    context = compute_dashboard_context(date_str, site_filter=site_filter)
     return jsonify({
         "work_date": context["work_date"],
         "movements": context["movements"],

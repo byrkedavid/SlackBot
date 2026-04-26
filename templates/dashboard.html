@@ -28,6 +28,49 @@
     .pill {
       background: white; border-radius: 999px; padding: 8px 14px;
       box-shadow: 0 2px 10px rgba(0,0,0,.05); font-size: .92rem;
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    .toolbar-label {
+      color: #667;
+      font-size: .8rem;
+      font-weight: 700;
+    }
+    .date-select,
+    .site-select {
+      border: none;
+      background: transparent;
+      font: inherit;
+      font-weight: 700;
+      color: #17202a;
+      outline: none;
+      cursor: pointer;
+      max-width: 220px;
+    }
+    .site-filter-pill {
+      border-radius: 16px;
+      align-items: flex-start;
+    }
+    .site-filter-content {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .site-select {
+      border: 1px solid #d6dde8;
+      background: #f8fafc;
+      border-radius: 10px;
+      padding: 6px 8px;
+      min-width: 160px;
+      min-height: 74px;
+      font-weight: 600;
+    }
+    .site-help {
+      color: #7b8794;
+      font-size: .72rem;
+    }
+    .clear-sites {
+      font-size: .78rem;
+      font-weight: 600;
     }
     .grid {
       display: grid; gap: 18px;
@@ -62,6 +105,26 @@
     }
     .name { font-weight: 600; }
     .meta { color: #7b8794; font-size: .76rem; margin-top: 2px; }
+    .name-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .schedule-badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: .68rem;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+    .badge-front { background: #dbeafe; color: #1d4ed8; }
+    .badge-back { background: #dcfce7; color: #15803d; }
+    .badge-always { background: #fef3c7; color: #92400e; }
+    .badge-never { background: #e5e7eb; color: #4b5563; }
+    .badge-custom { background: #ede9fe; color: #6d28d9; }
+    .badge-none { display: none; }
     .empty { color: #9aa5b1; font-style: italic; }
     .two-col {
       display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 22px;
@@ -70,11 +133,95 @@
     .timeline-user { margin-bottom: 14px; }
     .timeline-events { margin-top: 8px; padding-left: 18px; }
     .timeline-events li { margin: 4px 0; color: #566370; }
+
+
+    .toolbar-form {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+  .date-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .date-pill input {
+    border: none;
+    background: transparent;
+    font: inherit;
+    color: #17202a;
+    cursor: pointer;
+  }
+
+  .site-dropdown {
+    position: relative;
+  }
+
+  .site-dropdown-button {
+    border: none;
+    cursor: pointer;
+    color: #17202a;
+  }
+
+  .site-dropdown-menu {
+    display: none;
+    position: absolute;
+    top: 44px;
+    right: 0;
+    min-width: 190px;
+    background: white;
+    border-radius: 14px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.14);
+    padding: 10px;
+    z-index: 20;
+  }
+
+  .site-dropdown-menu.open {
+    display: block;
+  }
+
+  .site-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 6px;
+    border-radius: 8px;
+    font-size: .9rem;
+    cursor: pointer;
+  }
+
+  .site-option:hover {
+    background: #f2f4f8;
+  }
+
+  .clear-sites {
+    display: block;
+    margin-top: 8px;
+    padding: 8px 6px;
+    font-size: .85rem;
+  }
+
+  .apply-sites-btn {
+    margin-top: 10px;
+    width: 100%;
+    border: none;
+    border-radius: 8px;
+    padding: 8px;
+    background: #1264a3;
+    color: white;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
   </style>
   {% if is_today %}
   <meta http-equiv="refresh" content="60">
   {% endif %}
 </head>
+
 <body>
   <header>
     <div>
@@ -82,16 +229,53 @@
       <div class="subtle">{{ friendly_date }}{% if is_today %} · auto-refreshes every 60 seconds{% endif %}</div>
     </div>
     <div class="pill">
-      <a href="/dashboard?date={{ previous_day }}">← Previous day</a>
+      <a href="/dashboard?date={{ previous_day }}{% for site in selected_sites %}&site={{ site }}{% endfor %}">← Previous day</a>
       &nbsp;|&nbsp;
-      <a href="/dashboard?date={{ next_day }}">Next day →</a>
+      <a href="/dashboard?date={{ next_day }}{% for site in selected_sites %}&site={{ site }}{% endfor %}">Next day →</a>
     </div>
   </header>
 
   <div class="toolbar">
-    <div class="pill">Viewing: <strong>{{ work_date }}</strong></div>
-    <div class="pill">Expected missing: <strong>{{ missing_people|length }}</strong></div>
-    <div class="pill">Not scheduled tracked users: <strong>{{ not_scheduled_people|length }}</strong></div>
+    <form class="toolbar-form" method="get" action="/dashboard" id="dashboardFilters">
+    <div class="pill date-pill">
+      <span>Date:</span>
+      <input
+        type="date"
+        name="date"
+        value="{{ work_date }}"
+        onchange="document.getElementById('dashboardFilters').submit()"
+      >
+    </div>
+
+      <div class="pill">Expected missing: <strong>{{ missing_people|length }}</strong></div>
+      <div class="pill">Not scheduled tracked users: <strong>{{ not_scheduled_people|length }}</strong></div>
+
+      <div class="site-dropdown">
+        <button type="button" class="pill site-dropdown-button" onclick="toggleSiteDropdown()">
+          Site ▾
+        </button>
+
+        <div class="site-dropdown-menu" id="siteDropdownMenu">
+          {% for site in all_sites %}
+            <label class="site-option">
+              <input
+                type="checkbox"
+                name="site"
+                value="{{ site }}"
+                {% if site in selected_sites %}checked{% endif %}
+              >
+              <span>{{ emoji_map.get(site, '📍') }} {{ site }}</span>
+            </label>
+          {% endfor %}
+
+          <button type="submit" class="apply-sites-btn">
+            Apply
+          </button>
+
+          <a class="clear-sites" href="/dashboard?date={{ work_date }}">Clear sites</a>
+        </div>
+      </div>
+    </form>
   </div>
 
   <div class="grid">
@@ -107,8 +291,11 @@
             <div class="avatar-placeholder">{{ p.display_name[0] }}</div>
           {% endif %}
           <div>
-            <div class="name">{{ p.display_name }}</div>
-            <div class="meta">{{ p.updated_at }} · via {{ p.source }}</div>
+            <div class="name-line">
+              <div class="name">{{ p.display_name }}</div>
+              <span class="schedule-badge {{ p.schedule_badge_class }}">{{ p.schedule_label }}</span>
+            </div>
+            <div class="meta">{{ p.display_updated_at }} · via {{ p.source_label }}</div>
           </div>
         </div>
         {% endfor %}
@@ -130,7 +317,12 @@
           {% else %}
             <div class="avatar-placeholder">{{ p.display_name[0] }}</div>
           {% endif %}
-          <div><div class="name">{{ p.display_name }}</div></div>
+          <div>
+            <div class="name-line">
+              <div class="name">{{ p.display_name }}</div>
+              <span class="schedule-badge {{ p.schedule_badge_class }}">{{ p.schedule_label }}</span>
+            </div>
+          </div>
         </div>
         {% endfor %}
       {% else %}
@@ -139,7 +331,7 @@
     </section>
 
     <section class="panel">
-      <h2>🗓️ Checked in but not scheduled today</h2>
+      <h2>🗓️ Not scheduled today</h2>
       {% if not_scheduled_people %}
         {% for p in not_scheduled_people %}
         <div class="person">
@@ -148,7 +340,12 @@
           {% else %}
             <div class="avatar-placeholder">{{ p.display_name[0] }}</div>
           {% endif %}
-          <div><div class="name">{{ p.display_name }}</div></div>
+          <div>
+            <div class="name-line">
+              <div class="name">{{ p.display_name }}</div>
+              <span class="schedule-badge {{ p.schedule_badge_class }}">{{ p.schedule_label }}</span>
+            </div>
+          </div>
         </div>
         {% endfor %}
       {% else %}
@@ -165,7 +362,7 @@
           <div class="name">{{ person.display_name }}</div>
           <ul class="timeline-events">
             {% for event in person.events %}
-            <li>{{ event.checked_in_at }} → <strong>{{ event.site }}</strong> <span class="subtle">({{ event.source }})</span></li>
+            <li>{{ event.display_checked_in_at }} → <strong>{{ event.site }}</strong> <span class="subtle">({{ event.source_label }})</span></li>
             {% endfor %}
           </ul>
         </div>
@@ -174,5 +371,19 @@
       <div class="empty">No movement history for this day yet</div>
     {% endif %}
   </section>
+
+  <script>
+    function toggleSiteDropdown() {
+      document.getElementById("siteDropdownMenu").classList.toggle("open");
+    }
+
+    document.addEventListener("click", function(event) {
+      const dropdown = document.querySelector(".site-dropdown");
+      if (dropdown && !dropdown.contains(event.target)) {
+        document.getElementById("siteDropdownMenu").classList.remove("open");
+      }
+    });
+  </script>
+
 </body>
 </html>
