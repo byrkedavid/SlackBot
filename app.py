@@ -169,9 +169,14 @@ def seed_test_users():
         ("U_TEST_6", "Kevin White"),
         ("U_TEST_7", "Ryan Clark"),
         ("U_TEST_8", "Matt Hall"),
+        ("U_TEST_9", "Jeff Green"),
+        ("U_TEST_10", "Jay Bailey"),
+        ("U_TEST_11", "Bryan Young"),
+        ("U_TEST_12", "Hunter Knox"),
     ]
 
-    sites = ["ATL77", "ATL88", "OFF"]
+    #sites = ["ATL77", "ATL88", "OFF"]
+    sites = APP_HOME_SITES
 
     for user_id, name in fake_users:
         upsert_user(user_id, name, "")
@@ -189,6 +194,7 @@ def seed_test_users():
             now_local().isoformat(timespec="seconds"),
             source="seed"
         )
+    
 
 
 # ---- App Home --------------------------------------------------------------
@@ -690,6 +696,15 @@ flask_app = Flask(__name__)
 def register_dashboard_routes():
     from dashboard import dashboard_bp
     flask_app.register_blueprint(dashboard_bp)
+
+@flask_app.route("/favicon.ico")
+def favicon():
+    return flask_app.send_static_file("favicon.ico")
+
+@flask_app.route("/apple-touch-icon.png")
+@flask_app.route("/apple-touch-icon-precomposed.png")
+def apple_touch_icon():
+    return flask_app.send_static_file("apple-touch-icon.png")
 
 
 # ---- Entrypoint ------------------------------------------------------------

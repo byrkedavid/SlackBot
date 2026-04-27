@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 
-from config import SITE_EMOJI, TIMEZONE
+from config import APP_HOME_SITES, SITE_EMOJI, TIMEZONE
 from db import (
     get_all_users,
     get_daily_movements,
@@ -135,7 +135,7 @@ def compute_dashboard_context(
         grouped[row["site"]].append(row)
         checked_in_ids.add(row["slack_user_id"])
 
-    preferred = ["ATL77", "ATL88", "ATL99", "ATL118", "REMOTE", "OFF"]
+    preferred = APP_HOME_SITES
     site_sections = []
     for site in preferred:
         site_sections.append((site, sorted(grouped.get(site, []), key=lambda x: x["display_name"].lower())))

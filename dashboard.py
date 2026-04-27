@@ -21,7 +21,8 @@ def dashboard():
     if not site_filter:
         site_filter = None
 
-    show_all_sites = request.args.get("show") == "all"
+    show_values = request.args.getlist("show")
+    show_all_sites = bool(show_values and show_values[-1] == "all")
 
     context = compute_dashboard_context(
         date_str,

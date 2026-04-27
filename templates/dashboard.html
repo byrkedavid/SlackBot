@@ -2,18 +2,30 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <meta name="apple-mobile-web-app-title" content="Onsite App">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#f2f4f8" id="themeColorMeta">
   <title>Onsite Dashboard</title>
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="manifest" href="/static/site.webmanifest">
+
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html {
+      background: #f2f4f8;
+    }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: #f2f4f8;
-      padding: 28px 20px 42px;
+      min-height: 100vh;
+      padding: calc(28px + env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) calc(42px + env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
       color: #17202a;
     }
 
@@ -189,11 +201,13 @@
       padding-bottom: 10px;
     }
 
-    .site-card.ATL77 h2 { color: #1264a3; border-color: #1264a3; }
-    .site-card.ATL88 h2 { color: #2eb886; border-color: #2eb886; }
-    .site-card.ATL99 h2 { color: #e8912d; border-color: #e8912d; }
-    .site-card.ATL118 h2 { color: #d9485f; border-color: #d9485f; }
-    .site-card.REMOTE h2 { color: #6e44ff; border-color: #6e44ff; }
+    .site-card.ATL55 h2 { color: #1264a3; border-color: #1264a3; }
+    .site-card.ATL66 h2 { color: #2eb886; border-color: #2eb886; }
+    .site-card.ATL77 h2 { color: #e8912d; border-color: #e8912d; }
+    .site-card.ATL88 h2 { color: #d9485f; border-color: #d9485f; }
+    .site-card.ATL99 h2 { color: #6e44ff; border-color: #6e44ff; }
+    .site-card.ATL118 h2 { color: #ffce1b; border-color: #ffce1b; }
+    .site-card.REMOTE h2 { color: #6f4e37; border-color: #6f4e37; }
     .site-card.OFF h2 { color: #999; border-color: #d6d6d6; }
 
     .person {
@@ -274,8 +288,12 @@
     .timeline-events { margin-top: 8px; padding-left: 18px; }
     .timeline-events li { margin: 4px 0; color: #566370; }
 
+    html.dark,
     body.dark {
       background: #111827;
+    }
+
+    body.dark {
       color: #e5e7eb;
     }
 
@@ -445,18 +463,22 @@
             Apply
           </button>
 
-          <a class="clear-sites" href="/dashboard?date={{ work_date }}">Clear sites</a>
+          <a class="clear-sites" href="/dashboard?date={{ work_date }}{% if show_all_sites %}&show=all{% endif %}">Clear sites</a>
 
         </div><!--End site dropdown menu div-->
       </div><!--End site dropdown div-->
 
+      {% if show_all_sites %}
+        <input type="hidden" name="show" value="all" id="showAllSitesInput">
+      {% endif %}
+
       <button
         type="submit"
-        name="show"
-        value="{% if show_all_sites %}active{% else %}all{% endif %}"
-        class="pill toggle-action {% if show_all_sites %}active{% endif %}"
+        {% if not show_all_sites %}name="show" value="all"{% endif %}
+        {% if show_all_sites %}onclick="document.getElementById('showAllSitesInput').disabled = true"{% endif %}
+        class="pill toggle-action {% if not show_all_sites %}active{% endif %}"
       >
-        <span>Show all sites</span>
+        <span>Active sites only</span>
         <span class="switch"><span class="knob"></span></span>
       </button>
 
@@ -572,6 +594,7 @@
 
     function toggleDarkMode() {
       document.body.classList.toggle("dark");
+      document.documentElement.classList.toggle("dark", document.body.classList.contains("dark"));
       localStorage.setItem(
         "onsiteDarkMode",
         document.body.classList.contains("dark") ? "1" : "0"
@@ -583,6 +606,7 @@
       if (localStorage.getItem("onsiteDarkMode") === "1") {
         document.body.classList.add("dark");
       }
+      document.documentElement.classList.toggle("dark", document.body.classList.contains("dark"));
       setDarkButtonText();
     });
 
@@ -597,6 +621,7 @@
       const isDark = document.body.classList.contains("dark");
       document.getElementById("darkModeText").textContent = "Dark mode";
       document.querySelector(".dark-toggle")?.classList.toggle("active", isDark);
+      document.getElementById("themeColorMeta")?.setAttribute("content", isDark ? "#111827" : "#f2f4f8");
     }
   </script>
 </body>

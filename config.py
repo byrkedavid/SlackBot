@@ -19,6 +19,8 @@ RESET_MINUTE = int(os.environ.get("RESET_MINUTE", "0"))
 SEED_TEST_USERS = os.environ.get("SEED_TEST_USERS", "").lower() in {"1", "true", "yes"}
 
 SITE_ALIASES = {
+    "atl55": "ATL55", "55": "ATL55",
+    "atl66": "ATL66", "66": "ATL66",
     "atl77": "ATL77", "77": "ATL77",
     "atl88": "ATL88", "88": "ATL88",
     "atl99": "ATL99", "99": "ATL99",
@@ -28,6 +30,8 @@ SITE_ALIASES = {
 }
 
 SITE_EMOJI = {
+    "ATL55": "🏢",
+    "ATL66": "🏢",
     "ATL77": "🏢",
     "ATL88": "🏢",
     "ATL99": "🏢",
@@ -36,7 +40,7 @@ SITE_EMOJI = {
     "OFF": "🏖️",
 }
 
-APP_HOME_SITES = ["ATL77", "ATL88", "ATL99", "ATL118", "REMOTE", "OFF"]
+APP_HOME_SITES = ["ATL55", "ATL66", "ATL77", "ATL88", "ATL99", "ATL118", "REMOTE", "OFF"]
 
 # Check .env for admin user IDs
 ADMIN_USER_IDS = {
