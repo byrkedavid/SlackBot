@@ -16,10 +16,7 @@ TIMEZONE = ZoneInfo(os.environ.get("TIMEZONE", "America/New_York"))
 # Morning prompt / reset time in local timezone.
 RESET_HOUR = int(os.environ.get("RESET_HOUR", "6"))
 RESET_MINUTE = int(os.environ.get("RESET_MINUTE", "0"))
-
-# Anchor date used to determine alternating Wednesdays for front-half/back-half.
-# Pick a Wednesday you know was a front-half Wednesday.
-FH_WEDNESDAY_ANCHOR = os.environ.get("FH_WEDNESDAY_ANCHOR", "2026-01-07")
+SEED_TEST_USERS = os.environ.get("SEED_TEST_USERS", "").lower() in {"1", "true", "yes"}
 
 SITE_ALIASES = {
     "atl77": "ATL77", "77": "ATL77",

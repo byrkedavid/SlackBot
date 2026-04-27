@@ -1,14 +1,8 @@
 from __future__ import annotations
 
-from collections import defaultdict
-from datetime import datetime, timedelta
-from typing import Any
-
 from flask import Blueprint, jsonify, render_template, request, redirect
 
-from config import SITE_EMOJI, TIMEZONE
-from db import get_daily_movements, get_statuses_for_date
-from app import compute_dashboard_context  # intentional import after helpers are available
+from services import compute_dashboard_context
 
 
 dashboard_bp = Blueprint("dashboard", __name__)
@@ -22,10 +16,18 @@ def home():
 @dashboard_bp.route("/dashboard")
 def dashboard():
     date_str = request.args.get("date")
+
     site_filter = request.args.getlist("site")
     if not site_filter:
         site_filter = None
-    context = compute_dashboard_context(date_str, site_filter=site_filter)
+
+    show_all_sites = request.args.get("show") == "all"
+
+    context = compute_dashboard_context(
+        date_str,
+        site_filter=site_filter,
+        show_all_sites=show_all_sites,
+    )
     return render_template("dashboard.html", **context)
 
 

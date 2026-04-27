@@ -3,114 +3,241 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="apple-mobile-web-app-title" content="Onsite App">
   <title>Onsite Dashboard</title>
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: #f2f4f8;
       padding: 28px 20px 42px;
       color: #17202a;
     }
+
+    body,
+    .pill,
+    .site-card,
+    .panel,
+    .site-dropdown-menu,
+    .person,
+    .date-pill input,
+    .action-pill,
+    .site-option {
+      transition: background-color .22s ease, color .22s ease, border-color .22s ease, box-shadow .22s ease;
+    }
+
     a { color: #1264a3; text-decoration: none; }
     a:hover { text-decoration: underline; }
+
     header {
-      display: flex; justify-content: space-between; align-items: flex-end;
-      gap: 16px; flex-wrap: wrap; margin-bottom: 22px;
-    }
-    h1 { font-size: 1.7rem; }
-    .subtle { color: #667; font-size: .95rem; }
-    .toolbar {
-      display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+      flex-wrap: wrap;
       margin-bottom: 22px;
     }
-    .pill {
-      background: white; border-radius: 999px; padding: 8px 14px;
-      box-shadow: 0 2px 10px rgba(0,0,0,.05); font-size: .92rem;
-      display: inline-flex; align-items: center; gap: 8px;
-    }
-    .toolbar-label {
-      color: #667;
-      font-size: .8rem;
+
+    h1 { font-size: 1.7rem; }
+
+    .dashboard-date {
+      font-size: 1.25rem;
       font-weight: 700;
+      margin-top: 4px;
     }
-    .date-select,
-    .site-select {
+
+    .subtle { color: #667; font-size: .95rem; }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 22px;
+    }
+
+    .toolbar-form {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .pill {
+      background: white;
+      border-radius: 999px;
+      padding: 8px 14px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.05);
+      font-size: .92rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .date-pill input {
       border: none;
       background: transparent;
       font: inherit;
-      font-weight: 700;
       color: #17202a;
-      outline: none;
       cursor: pointer;
-      max-width: 220px;
     }
-    .site-filter-pill {
-      border-radius: 16px;
-      align-items: flex-start;
+
+    .action-pill {
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
+      background: white;
+      color: #17202a;
+      gap: 10px;
     }
-    .site-filter-content {
+
+    .action-pill:hover {
+      background: #dbeafe;
+      text-decoration: none;
+    }
+
+    .action-pill.active {
+      background: #1264a3;
+      color: white;
+    }
+
+    .dark-toggle {
+      border: none;
+      cursor: pointer;
+      background: #f3f4f6;
+      color: #374151;
+    }
+
+    .site-dropdown { position: relative; }
+
+    .site-dropdown-button {
+      border: none;
+      cursor: pointer;
+      color: #17202a;
+    }
+
+    .site-dropdown-menu {
+      display: none;
+      position: absolute;
+      top: 44px;
+      right: 0;
+      min-width: 190px;
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.14);
+      padding: 10px;
+      z-index: 20;
+    }
+
+    .site-dropdown-menu.open { display: block; }
+
+    .site-option {
       display: flex;
-      flex-direction: column;
-      gap: 6px;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 6px;
+      border-radius: 8px;
+      font-size: .9rem;
+      cursor: pointer;
     }
-    .site-select {
-      border: 1px solid #d6dde8;
-      background: #f8fafc;
-      border-radius: 10px;
-      padding: 6px 8px;
-      min-width: 160px;
-      min-height: 74px;
-      font-weight: 600;
-    }
-    .site-help {
-      color: #7b8794;
-      font-size: .72rem;
-    }
+
+    .site-option:hover { background: #f2f4f8; }
+
     .clear-sites {
-      font-size: .78rem;
-      font-weight: 600;
+      display: block;
+      margin-top: 8px;
+      padding: 8px 6px;
+      font-size: .85rem;
     }
+
+    .apply-sites-btn {
+      margin-top: 10px;
+      width: 100%;
+      border: none;
+      border-radius: 8px;
+      padding: 8px;
+      background: #1264a3;
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
     .grid {
-      display: grid; gap: 18px;
+      display: grid;
+      gap: 18px;
       grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
       margin-bottom: 24px;
     }
-    .site-card, .panel {
-      background: white; border-radius: 16px; padding: 18px;
+
+    .site-card,
+    .panel {
+      background: white;
+      border-radius: 16px;
+      padding: 18px;
       box-shadow: 0 3px 14px rgba(0,0,0,.06);
     }
-    .site-card h2, .panel h2 {
-      margin-bottom: 14px; font-size: 1rem; letter-spacing: .02em;
-      border-bottom: 2px solid #eef2f7; padding-bottom: 10px;
+
+    .site-card h2,
+    .panel h2 {
+      margin-bottom: 14px;
+      font-size: 1rem;
+      letter-spacing: .02em;
+      border-bottom: 2px solid #eef2f7;
+      padding-bottom: 10px;
     }
+
     .site-card.ATL77 h2 { color: #1264a3; border-color: #1264a3; }
     .site-card.ATL88 h2 { color: #2eb886; border-color: #2eb886; }
     .site-card.ATL99 h2 { color: #e8912d; border-color: #e8912d; }
     .site-card.ATL118 h2 { color: #d9485f; border-color: #d9485f; }
     .site-card.REMOTE h2 { color: #6e44ff; border-color: #6e44ff; }
     .site-card.OFF h2 { color: #999; border-color: #d6d6d6; }
+
     .person {
-      display: flex; gap: 12px; align-items: center;
-      padding: 10px 0; border-bottom: 1px solid #f2f4f8;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #f2f4f8;
     }
+
     .person:last-child { border-bottom: none; }
-    .person img, .avatar-placeholder {
-      width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
-    }
+
+    .person img,
     .avatar-placeholder {
-      background: #dce3f0; color: #4c6faf; display: flex;
-      align-items: center; justify-content: center; font-weight: 700;
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      flex-shrink: 0;
     }
+
+    .avatar-placeholder {
+      background: #dce3f0;
+      color: #4c6faf;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+    }
+
     .name { font-weight: 600; }
-    .meta { color: #7b8794; font-size: .76rem; margin-top: 2px; }
+
+    .meta {
+      color: #7b8794;
+      font-size: .76rem;
+      margin-top: 2px;
+    }
+
     .name-line {
       display: flex;
       align-items: center;
       gap: 8px;
       flex-wrap: wrap;
     }
+
     .schedule-badge {
       display: inline-block;
       border-radius: 999px;
@@ -119,102 +246,146 @@
       font-weight: 700;
       line-height: 1.4;
     }
+
     .badge-front { background: #dbeafe; color: #1d4ed8; }
     .badge-back { background: #dcfce7; color: #15803d; }
     .badge-always { background: #fef3c7; color: #92400e; }
     .badge-never { background: #e5e7eb; color: #4b5563; }
     .badge-custom { background: #ede9fe; color: #6d28d9; }
     .badge-none { display: none; }
-    .empty { color: #9aa5b1; font-style: italic; }
-    .two-col {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 22px;
+
+    .empty {
+      color: #9aa5b1;
+      font-style: italic;
     }
-    @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+
+    @media (max-width: 900px) {
+      .two-col { grid-template-columns: 1fr; }
+    }
+
     .timeline-user { margin-bottom: 14px; }
     .timeline-events { margin-top: 8px; padding-left: 18px; }
     .timeline-events li { margin: 4px 0; color: #566370; }
 
+    body.dark {
+      background: #111827;
+      color: #e5e7eb;
+    }
+
+    body.dark .pill,
+    body.dark .site-card,
+    body.dark .panel,
+    body.dark .site-dropdown-menu {
+      background: #1f2937;
+      color: #e5e7eb;
+      box-shadow: 0 3px 14px rgba(0,0,0,.35);
+    }
+
+    body.dark .subtle,
+    body.dark .meta,
+    body.dark .site-help,
+    body.dark .timeline-events li {
+      color: #9ca3af;
+    }
+
+    body.dark a { color: #93c5fd; }
+
+    body.dark .site-card h2,
+    body.dark .panel h2 {
+      border-bottom-color: #374151;
+    }
+
+    body.dark .person {
+      border-bottom-color: #374151;
+    }
+
+    body.dark .date-pill input {
+      color: #e5e7eb;
+    }
+
+    body.dark .site-dropdown-button {
+      color: #e5e7eb;
+    }
+
+    body.dark .site-option:hover {
+      background: #374151;
+    }
+
+    body.dark .dark-toggle {
+      background: #1f2937;
+      color: #e5e7eb;
+    }
+
+    body.dark .action-pill {
+      background: #263244;
+      color: #dbeafe;
+    }
+
+    body.dark .action-pill.active {
+      background: #3b82f6;
+      color: white;
+    }
 
     .toolbar-form {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  align-items: center;
-}
+      row-gap: 12px;
+    }
 
-  .date-pill {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
+    @media (max-width: 600px) {
+      .toolbar-form {
+        row-gap: 14px;
+      }
 
-  .date-pill input {
-    border: none;
-    background: transparent;
-    font: inherit;
-    color: #17202a;
-    cursor: pointer;
-  }
+      .pill {
+        margin-bottom: 2px;
+      }
+    }
 
-  .site-dropdown {
-    position: relative;
-  }
 
-  .site-dropdown-button {
-    border: none;
-    cursor: pointer;
-    color: #17202a;
-  }
+    .toggle-action {
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
+      background: white;
+      color: #17202a;
+    }
 
-  .site-dropdown-menu {
-    display: none;
-    position: absolute;
-    top: 44px;
-    right: 0;
-    min-width: 190px;
-    background: white;
-    border-radius: 14px;
-    box-shadow: 0 8px 28px rgba(0,0,0,.14);
-    padding: 10px;
-    z-index: 20;
-  }
+    .switch {
+      width: 34px;
+      height: 18px;
+      border-radius: 999px;
+      background: #d1d5db;
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      transition: background-color .22s ease;
+    }
 
-  .site-dropdown-menu.open {
-    display: block;
-  }
+    .knob {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: white;
+      position: absolute;
+      left: 2px;
+      transition: transform .22s ease;
+    }
 
-  .site-option {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 6px;
-    border-radius: 8px;
-    font-size: .9rem;
-    cursor: pointer;
-  }
+    .toggle-action.active .switch,
+    body.dark #darkModeSwitch {
+      background: #1264a3;
+    }
 
-  .site-option:hover {
-    background: #f2f4f8;
-  }
-
-  .clear-sites {
-    display: block;
-    margin-top: 8px;
-    padding: 8px 6px;
-    font-size: .85rem;
-  }
-
-  .apply-sites-btn {
-    margin-top: 10px;
-    width: 100%;
-    border: none;
-    border-radius: 8px;
-    padding: 8px;
-    background: #1264a3;
-    color: white;
-    font-weight: 700;
-    cursor: pointer;
-  }
+    .toggle-action.active .knob,
+    body.dark #darkModeSwitch .knob {
+      transform: translateX(16px);
+    }
 
   </style>
   {% if is_today %}
@@ -225,27 +396,29 @@
 <body>
   <header>
     <div>
-      <h1>📍 Onsite Dashboard</h1>
-      <div class="subtle">{{ friendly_date }}{% if is_today %} · auto-refreshes every 60 seconds{% endif %}</div>
+      <h1>Onsite Dashboard • {{ date_str }}</h1>
+      {% if is_today %}
+        <div class="subtle">Auto-refreshes every 60 seconds</div>
+      {% endif %}
     </div>
     <div class="pill">
-      <a href="/dashboard?date={{ previous_day }}{% for site in selected_sites %}&site={{ site }}{% endfor %}">← Previous day</a>
+      <a href="/dashboard?date={{ previous_day }}{% for site in selected_sites %}&site={{ site }}{% endfor %}{% if show_all_sites %}&show=all{% endif %}">← Previous day</a>
       &nbsp;|&nbsp;
-      <a href="/dashboard?date={{ next_day }}{% for site in selected_sites %}&site={{ site }}{% endfor %}">Next day →</a>
+      <a href="/dashboard?date={{ next_day }}{% for site in selected_sites %}&site={{ site }}{% endfor %}{% if show_all_sites %}&show=all{% endif %}">Next day →</a>
     </div>
   </header>
 
   <div class="toolbar">
     <form class="toolbar-form" method="get" action="/dashboard" id="dashboardFilters">
-    <div class="pill date-pill">
-      <span>Date:</span>
-      <input
-        type="date"
-        name="date"
-        value="{{ work_date }}"
-        onchange="document.getElementById('dashboardFilters').submit()"
-      >
-    </div>
+      <div class="pill date-pill">
+        <span>Date:</span>
+        <input
+          type="date"
+          name="date"
+          value="{{ work_date }}"
+          onchange="document.getElementById('dashboardFilters').submit()"
+        >
+      </div>
 
       <div class="pill">Expected missing: <strong>{{ missing_people|length }}</strong></div>
       <div class="pill">Not scheduled tracked users: <strong>{{ not_scheduled_people|length }}</strong></div>
@@ -273,10 +446,28 @@
           </button>
 
           <a class="clear-sites" href="/dashboard?date={{ work_date }}">Clear sites</a>
-        </div>
-      </div>
-    </form>
-  </div>
+
+        </div><!--End site dropdown menu div-->
+      </div><!--End site dropdown div-->
+
+      <button
+        type="submit"
+        name="show"
+        value="{% if show_all_sites %}active{% else %}all{% endif %}"
+        class="pill toggle-action {% if show_all_sites %}active{% endif %}"
+      >
+        <span>Show all sites</span>
+        <span class="switch"><span class="knob"></span></span>
+      </button>
+
+      <button type="button" class="pill toggle-action dark-toggle" onclick="toggleDarkMode()">
+        <span id="darkModeText">Dark mode</span>
+        <span class="switch" id="darkModeSwitch"><span class="knob"></span></span>
+      </button>
+
+
+    </form><!--End form-->
+  </div> <!--End toolbar div-->
 
   <div class="grid">
     {% for site, people in site_sections %}
@@ -372,10 +563,28 @@
     {% endif %}
   </section>
 
+  <p style="padding-top: 15px;"> Created by <a href="https://www.davidbyrke.com">David Byrke</a>.</p>
+
   <script>
     function toggleSiteDropdown() {
       document.getElementById("siteDropdownMenu").classList.toggle("open");
     }
+
+    function toggleDarkMode() {
+      document.body.classList.toggle("dark");
+      localStorage.setItem(
+        "onsiteDarkMode",
+        document.body.classList.contains("dark") ? "1" : "0"
+      );
+      setDarkButtonText();
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+      if (localStorage.getItem("onsiteDarkMode") === "1") {
+        document.body.classList.add("dark");
+      }
+      setDarkButtonText();
+    });
 
     document.addEventListener("click", function(event) {
       const dropdown = document.querySelector(".site-dropdown");
@@ -383,7 +592,12 @@
         document.getElementById("siteDropdownMenu").classList.remove("open");
       }
     });
-  </script>
 
+    function setDarkButtonText() {
+      const isDark = document.body.classList.contains("dark");
+      document.getElementById("darkModeText").textContent = "Dark mode";
+      document.querySelector(".dark-toggle")?.classList.toggle("active", isDark);
+    }
+  </script>
 </body>
 </html>
