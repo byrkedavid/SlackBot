@@ -154,16 +154,16 @@ def build_slack_dashboard_blocks(context: dict, *, max_people_per_site: int = 12
 
         total_people += len(people)
         visible_people = people[:max_people_per_site]
-        names = ", ".join(person["display_name"] for person in visible_people)
+        names = "\n".join(f"- {person['display_name']}" for person in visible_people)
         if len(people) > max_people_per_site:
-            names += f", +{len(people) - max_people_per_site} more"
+            names += f"\n- +{len(people) - max_people_per_site} more"
 
         blocks.append(
             {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"{SITE_EMOJI.get(site, '📍')} *{site}* ({len(people)})\n{names}",
+                    "text": f"{SITE_EMOJI.get(site, '📍')} *{site}*  |  {len(people)} checked in\n{names}",
                 },
             }
         )
