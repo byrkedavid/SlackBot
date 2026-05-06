@@ -4,12 +4,10 @@ import re
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
-from scheduler import start_scheduler, run_daily_reset
 from services import (
     compute_dashboard_context,
     format_dt_short,
     now_local,
-    schedule_label,
     today_str,
 )
 
@@ -24,15 +22,13 @@ from config import (
     SUMMARY_CHANNEL_ID,
 )
 from db import (
+    clear_all_current_checkins,
     clear_state,
     get_current_checkin,
-    get_schedule_for_user,
     get_state,
     get_user_history,
     init_db,
     record_checkin,
-    set_schedule,
-    set_schedule_override,
     set_state,
     upsert_user,
 )
@@ -76,7 +72,6 @@ def is_admin(user_id: str) -> bool:
 
 def get_admin_target_context(user_id: str) -> dict:
     current = get_current_checkin(user_id)
-    schedule = get_schedule_for_user(user_id)
 
     if current and current.get("work_date") == today_str():
         current_text = (
@@ -86,10 +81,8 @@ def get_admin_target_context(user_id: str) -> dict:
     else:
         current_text = "❓ Current today: *Not checked in*"
 
-    schedule_text = f"🗓️ Schedule: *{schedule_label(schedule.get('schedule_type') if schedule else None)}*"
     return {
         "current_text": current_text,
-        "schedule_text": schedule_text,
     }
 
 
@@ -123,13 +116,6 @@ def build_summary_blocks(context: dict):
             }
         )
 
-    if context["missing_people"]:
-        missing_names = ", ".join(person["display_name"] for person in context["missing_people"])
-        blocks.extend([
-            {"type": "divider"},
-            {"type": "section", "text": {"type": "mrkdwn", "text": f"⏳ *Expected today, not checked in:* {missing_names}"}},
-        ])
-
     blocks.extend([
         {"type": "divider"},
         {"type": "context", "elements": [{"type": "mrkdwn", "text": "Open the Onsite Slack Bot App Home for the full team view."}]},
@@ -148,8 +134,6 @@ def build_summary_text(context: dict) -> str:
         lines.append(f"{SITE_EMOJI.get(site, '📍')} {site}: {names}")
     if not added:
         lines.append("No one has checked in yet.")
-    if context["missing_people"]:
-        lines.append("Expected today, not checked in: " + ", ".join(p["display_name"] for p in context["missing_people"]))
     lines.append("Open the Onsite Slack Bot App Home for the full team view.")
     return "\n".join(lines)
 
@@ -163,56 +147,30 @@ def build_slack_dashboard_blocks(context: dict, *, max_people_per_site: int = 12
         {"type": "divider"},
     ]
 
-    total_people = sum(len(people) for _site, people in context["site_sections"])
-    if total_people:
-        for site, people in context["site_sections"]:
-            if not people:
-                continue
+    total_people = 0
+    for site, people in context["site_sections"]:
+        if not people:
+            continue
 
-            visible_people = people[:max_people_per_site]
-            names = ", ".join(person["display_name"] for person in visible_people)
-            if len(people) > max_people_per_site:
-                names += f", +{len(people) - max_people_per_site} more"
+        total_people += len(people)
+        visible_people = people[:max_people_per_site]
+        names = ", ".join(person["display_name"] for person in visible_people)
+        if len(people) > max_people_per_site:
+            names += f", +{len(people) - max_people_per_site} more"
 
-            blocks.append(
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f"{SITE_EMOJI.get(site, '📍')} *{site}* ({len(people)})\n{names}",
-                    },
-                }
-            )
-    else:
-        blocks.append(
-            {"type": "section", "text": {"type": "mrkdwn", "text": "_No one has checked in yet._"}}
-        )
-
-    if context["missing_people"]:
-        missing_names = ", ".join(person["display_name"] for person in context["missing_people"][:20])
-        if len(context["missing_people"]) > 20:
-            missing_names += f", +{len(context['missing_people']) - 20} more"
-        blocks.extend(
-            [
-                {"type": "divider"},
-                {
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": f"*Expected today, not checked in:*\n{missing_names}"},
-                },
-            ]
-        )
-
-    if context["not_scheduled_people"]:
         blocks.append(
             {
-                "type": "context",
-                "elements": [
-                    {
-                        "type": "mrkdwn",
-                        "text": f"{len(context['not_scheduled_people'])} people are not scheduled today.",
-                    }
-                ],
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"{SITE_EMOJI.get(site, '📍')} *{site}* ({len(people)})\n{names}",
+                },
             }
+        )
+
+    if total_people == 0:
+        blocks.append(
+            {"type": "section", "text": {"type": "mrkdwn", "text": "_No one has checked in yet._"}}
         )
 
     return blocks
@@ -261,10 +219,6 @@ def seed_test_users():
     for user_id, name in fake_users:
         upsert_user(user_id, name, "")
 
-        # random schedule
-        schedule = random.choice(["front_half", "back_half"])
-        set_schedule(user_id, schedule)
-
         # random check-in today
         site = random.choice(sites)
         record_checkin(
@@ -289,12 +243,6 @@ def build_app_home(user_id: str):
     else:
         status_text = "❓ *You haven't checked in today.*"
 
-    schedule = get_schedule_for_user(user_id)
-    if schedule and schedule.get("schedule_type"):
-        schedule_text = f"*Schedule:* `{schedule_label(schedule['schedule_type'])}`"
-    else:
-        schedule_text = "*Schedule:* not set"
-
     buttons = []
     for site in APP_HOME_SITES:
         btn = {
@@ -311,7 +259,6 @@ def build_app_home(user_id: str):
         {"type": "header", "text": {"type": "plain_text", "text": "📍 Onsite Slack Bot", "emoji": True}},
         {"type": "divider"},
         {"type": "section", "text": {"type": "mrkdwn", "text": status_text}},
-        {"type": "section", "text": {"type": "mrkdwn", "text": schedule_text}},
         {
             "type": "context",
             "elements": [
@@ -323,24 +270,6 @@ def build_app_home(user_id: str):
         },
         {"type": "actions", "elements": buttons},
     ]
-
-    if is_admin(user_id):
-        blocks.extend(
-            [
-                {"type": "divider"},
-                {
-                    "type": "actions",
-                    "elements": [
-                        {
-                            "type": "button",
-                            "text": {"type": "plain_text", "text": "Admin Controls", "emoji": True},
-                            "action_id": "open_admin_modal",
-                            "value": "open_admin_modal",
-                        }
-                    ],
-                },
-            ]
-        )
 
     blocks.extend(
         [
@@ -354,7 +283,16 @@ def build_app_home(user_id: str):
                         "action_id": "refresh_app_home",
                         "value": "refresh_app_home",
                     }
-                ],
+                ] + (
+                    [
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "Admin Controls", "emoji": True},
+                            "action_id": "open_admin_modal",
+                            "value": "open_admin_modal",
+                        }
+                    ] if is_admin(user_id) else []
+                ),
             },
             *build_slack_dashboard_blocks(compute_dashboard_context(today_str())),
         ]
@@ -501,35 +439,6 @@ def handle_history(ack, body, client, logger):
     ack({"response_type": "ephemeral", "text": "\n".join(lines)})
 
 
-@slack_app.command("/onsite-schedule")
-def handle_schedule(ack, body, client, logger):
-    user_id = body["user_id"]
-    text = (body.get("text") or "").strip().lower()
-
-    if not text:
-        current = get_schedule_for_user(user_id)
-        if not current:
-            ack({"response_type": "ephemeral", "text": "No schedule set. Try `/onsite-schedule front_half` or `/onsite-schedule back_half`."})
-            return
-        ack({"response_type": "ephemeral", "text": f"Your current schedule is *{current['schedule_type']}*."})
-        return
-
-    if text not in {"front_half", "back_half", "always_expected", "never_expected"}:
-        ack({"response_type": "ephemeral", "text": "Valid values: `front_half`, `back_half`, `always_expected`, `never_expected`."})
-        return
-
-    try:
-        display_name, image_url = fetch_user_profile(client, user_id)
-        upsert_user(user_id, display_name, image_url)
-        set_schedule(user_id, text)
-        upsert_summary_message(client)
-        publish_home(client, user_id)
-        ack({"response_type": "ephemeral", "text": f"✅ Schedule updated to *{text}*."})
-    except Exception as exc:
-        logger.exception("Error setting schedule")
-        ack({"response_type": "ephemeral", "text": f"⚠️ Something went wrong: {exc}"})
-
-
 @slack_app.command("/onsite-admin")
 def handle_admin(ack, body, client, logger):
     user_id = body["user_id"]
@@ -625,8 +534,6 @@ def build_admin_modal(
                 "action_id": "action_select",
                 "options": [
                     {"text": {"type": "plain_text", "text": "Check In"}, "value": "checkin"},
-                    {"text": {"type": "plain_text", "text": "Override Schedule (Today)"}, "value": "override"},
-                    {"text": {"type": "plain_text", "text": "Set User Schedule"}, "value": "set_schedule"},
                     {"text": {"type": "plain_text", "text": "Reset Today"}, "value": "reset_today"},
                 ],
                 **(
@@ -636,8 +543,6 @@ def build_admin_modal(
                                 "type": "plain_text",
                                 "text": {
                                     "checkin": "Check In",
-                                    "override": "Override Schedule (Today)",
-                                    "set_schedule": "Set User Schedule",
                                     "reset_today": "Reset Today",
                                 }[selected_action]
                             },
@@ -659,7 +564,7 @@ def build_admin_modal(
                 "block_id": "target_context_block",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"{target_context['current_text']}\n{target_context['schedule_text']}"
+                    "text": target_context["current_text"]
                 },
             },
         ])
@@ -680,40 +585,6 @@ def build_admin_modal(
                 }
             }
         )
-    elif selected_action == "override":
-        blocks.append(
-            {
-                "type": "input",
-                "block_id": "override_block",
-                "label": {"type": "plain_text", "text": "Override Type"},
-                "element": {
-                    "type": "static_select",
-                    "action_id": "override_select",
-                    "options": [
-                        {"text": {"type": "plain_text", "text": "Expected"}, "value": "expected"},
-                        {"text": {"type": "plain_text", "text": "Not Expected"}, "value": "not_expected"},
-                    ]
-                }
-            }
-        )
-    elif selected_action == "set_schedule":
-        blocks.append(
-            {
-                "type": "input",
-                "block_id": "schedule_block",
-                "label": {"type": "plain_text", "text": "Schedule"},
-                "element": {
-                    "type": "static_select",
-                    "action_id": "schedule_select",
-                    "options": [
-                        {"text": {"type": "plain_text", "text": "Front Half"}, "value": "front_half"},
-                        {"text": {"type": "plain_text", "text": "Back Half"}, "value": "back_half"},
-                        {"text": {"type": "plain_text", "text": "Always Expected"}, "value": "always_expected"},
-                        {"text": {"type": "plain_text", "text": "Never Expected"}, "value": "never_expected"},
-                    ]
-                }
-            }
-        )
     elif selected_action == "reset_today":
         blocks.append(
             {
@@ -721,7 +592,7 @@ def build_admin_modal(
                 "block_id": "reset_warn_block",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "⚠️ This will clear all current check-ins for today and post a fresh morning prompt + living summary."
+                    "text": "⚠️ This will clear today's current check-ins and refresh the living summary."
                 },
             }
         )
@@ -774,23 +645,11 @@ def handle_admin_submit(ack, body, client, logger):
             )
             msg = f"✅ Updated <@{target_user}> → *{site}*"
 
-        elif action == "override":
-            override_value = values["override_block"]["override_select"]["selected_option"]["value"]
-            set_schedule_override(target_user, today_str(), override_value)
-            msg = f"✅ Set today’s override for <@{target_user}> → *{override_value}*"
-
-        elif action == "set_schedule":
-            schedule_value = values["schedule_block"]["schedule_select"]["selected_option"]["value"]
-            display_name, image_url = fetch_user_profile(client, target_user)
-            upsert_user(target_user, display_name, image_url)
-            set_schedule(target_user, schedule_value)
-            msg = f"✅ Updated <@{target_user}> schedule → *{schedule_label(schedule_value)}*"
-
         elif action == "reset_today":
+            clear_all_current_checkins()
             clear_state("summary_ts")
-            run_daily_reset(client)
             upsert_summary_message(client)
-            msg = "✅ Reset today’s check-ins and posted a fresh morning prompt."
+            msg = "✅ Reset today's check-ins and refreshed the living summary."
 
         else:
             msg = "⚠️ Unknown admin action."
@@ -828,9 +687,6 @@ def main():
 
     if SEED_TEST_USERS:
         seed_test_users()
-
-    start_scheduler(slack_app.client, after_reset_callback=upsert_summary_message)
-    print("✅ Daily scheduler running")
 
     print("✅ Slack bot connecting via Socket Mode...")
     SocketModeHandler(slack_app, SLACK_APP_TOKEN).start()

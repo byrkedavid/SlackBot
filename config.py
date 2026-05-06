@@ -8,14 +8,9 @@ SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
 SLACK_APP_TOKEN = os.environ["SLACK_APP_TOKEN"]
 SUMMARY_CHANNEL_ID = os.environ["SUMMARY_CHANNEL_ID"]
 
-# Public URL users can click from Slack. Replace in production.
-DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "http://localhost:5000/dashboard")
 DB_PATH = os.environ.get("DB_PATH", "onsite.db")
 TIMEZONE = ZoneInfo(os.environ.get("TIMEZONE", "America/New_York"))
 
-# Morning prompt / reset time in local timezone.
-RESET_HOUR = int(os.environ.get("RESET_HOUR", "6"))
-RESET_MINUTE = int(os.environ.get("RESET_MINUTE", "0"))
 SEED_TEST_USERS = os.environ.get("SEED_TEST_USERS", "").lower() in {"1", "true", "yes"}
 
 SITE_ALIASES = {
