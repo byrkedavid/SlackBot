@@ -2,3 +2,4 @@ Flask
 python-dotenv
 slack-bolt
 slack-sdk
+tzdata

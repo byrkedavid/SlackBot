@@ -65,6 +65,7 @@ def source_label(source: str | None) -> str:
         "slash_command": "slash command",
         "app_home": "App Home",
         "admin_modal": "admin",
+        "passive_message": "channel message",
     }.get(source or "", source or "unknown")
 
 

@@ -1,8 +1,6 @@
 from __future__ import annotations
 import re
-import threading
 
-from flask import Flask
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
@@ -18,7 +16,6 @@ from services import (
 from config import (
     ADMIN_USER_IDS,
     APP_HOME_SITES,
-    DASHBOARD_URL,
     SEED_TEST_USERS,
     SITE_ALIASES,
     SITE_EMOJI,
@@ -45,6 +42,25 @@ from db import (
 
 def normalize_site(text: str) -> str | None:
     return SITE_ALIASES.get(text.strip().lower()) if text else None
+
+
+ONSITE_MESSAGE_PATTERN = re.compile(
+    r"\bon[\s-]*site\b\s*[:=-]?\s*(?P<site>(?:atl[\s-]*)?\d{2,3}|remote|wfh|home|off|out|pto|vacation)\b",
+    re.IGNORECASE,
+)
+
+
+def extract_passive_onsite_site(text: str) -> str | None:
+    """Find casual check-ins like 'onsite ATL77' or 'on-site 77' in channel text."""
+    if not text:
+        return None
+
+    match = ONSITE_MESSAGE_PATTERN.search(text)
+    if not match:
+        return None
+
+    site_text = re.sub(r"\s+", "", match.group("site"))
+    return normalize_site(site_text)
 
 
 def fetch_user_profile(client, user_id: str):
@@ -116,7 +132,7 @@ def build_summary_blocks(context: dict):
 
     blocks.extend([
         {"type": "divider"},
-        {"type": "context", "elements": [{"type": "mrkdwn", "text": f"<{DASHBOARD_URL}?date={context['work_date']}|Open dashboard>"}]},
+        {"type": "context", "elements": [{"type": "mrkdwn", "text": "Open the Onsite Slack Bot App Home for the full team view."}]},
     ])
     return blocks
 
@@ -134,8 +150,72 @@ def build_summary_text(context: dict) -> str:
         lines.append("No one has checked in yet.")
     if context["missing_people"]:
         lines.append("Expected today, not checked in: " + ", ".join(p["display_name"] for p in context["missing_people"]))
-    lines.append(f"Dashboard: {DASHBOARD_URL}?date={context['work_date']}")
+    lines.append("Open the Onsite Slack Bot App Home for the full team view.")
     return "\n".join(lines)
+
+
+def build_slack_dashboard_blocks(context: dict, *, max_people_per_site: int = 12):
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"Team Dashboard - {context['date_str']}", "emoji": True},
+        },
+        {"type": "divider"},
+    ]
+
+    total_people = sum(len(people) for _site, people in context["site_sections"])
+    if total_people:
+        for site, people in context["site_sections"]:
+            if not people:
+                continue
+
+            visible_people = people[:max_people_per_site]
+            names = ", ".join(person["display_name"] for person in visible_people)
+            if len(people) > max_people_per_site:
+                names += f", +{len(people) - max_people_per_site} more"
+
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"{SITE_EMOJI.get(site, '📍')} *{site}* ({len(people)})\n{names}",
+                    },
+                }
+            )
+    else:
+        blocks.append(
+            {"type": "section", "text": {"type": "mrkdwn", "text": "_No one has checked in yet._"}}
+        )
+
+    if context["missing_people"]:
+        missing_names = ", ".join(person["display_name"] for person in context["missing_people"][:20])
+        if len(context["missing_people"]) > 20:
+            missing_names += f", +{len(context['missing_people']) - 20} more"
+        blocks.extend(
+            [
+                {"type": "divider"},
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": f"*Expected today, not checked in:*\n{missing_names}"},
+                },
+            ]
+        )
+
+    if context["not_scheduled_people"]:
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"{len(context['not_scheduled_people'])} people are not scheduled today.",
+                    }
+                ],
+            }
+        )
+
+    return blocks
 
 
 def upsert_summary_message(client):
@@ -227,52 +307,63 @@ def build_app_home(user_id: str):
             btn["style"] = "primary"
         buttons.append(btn)
 
+    blocks = [
+        {"type": "header", "text": {"type": "plain_text", "text": "📍 Onsite Slack Bot", "emoji": True}},
+        {"type": "divider"},
+        {"type": "section", "text": {"type": "mrkdwn", "text": status_text}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": schedule_text}},
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": "Post `onsite ATL77` in the channel, use `/onsite <site>`, or tap a button below.",
+                }
+            ],
+        },
+        {"type": "actions", "elements": buttons},
+    ]
+
     if is_admin(user_id):
-        blocks = [
-            {"type": "header", "text": {"type": "plain_text", "text": "📍 Onsite Slack Bot", "emoji": True}},
-            {"type": "divider"},
-            {"type": "section", "text": {"type": "mrkdwn", "text": status_text}},
-            {"type": "section", "text": {"type": "mrkdwn", "text": schedule_text}},
-            {"type": "section", "text": {"type": "mrkdwn", "text": "Set schedule with `/onsite-schedule` command. Admins can override with `/onsite-admin`."}},
-            {"type": "divider"},
-            {"type": "section", "text": {"type": "mrkdwn", "text": "*Where are you today?*"}},
-            {"type": "actions", "elements": buttons},
+        blocks.extend(
+            [
+                {"type": "divider"},
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "Admin Controls", "emoji": True},
+                            "action_id": "open_admin_modal",
+                            "value": "open_admin_modal",
+                        }
+                    ],
+                },
+            ]
+        )
+
+    blocks.extend(
+        [
             {"type": "divider"},
             {
                 "type": "actions",
                 "elements": [
                     {
                         "type": "button",
-                        "text": {"type": "plain_text", "text": "⚙️ Admin Controls", "emoji": True},
-                        "action_id": "open_admin_modal",
-                        "value": "open_admin_modal",
+                        "text": {"type": "plain_text", "text": "Refresh Team View", "emoji": True},
+                        "action_id": "refresh_app_home",
+                        "value": "refresh_app_home",
                     }
                 ],
             },
-            {"type": "divider"},
-            {"type": "context", "elements": [{"type": "mrkdwn", "text": f"<{DASHBOARD_URL}?date={today_str()}|View team dashboard> · Use `/onsite <site>` anytime."}]},
+            *build_slack_dashboard_blocks(compute_dashboard_context(today_str())),
         ]
-    else:
-        blocks = [
-            {"type": "header", "text": {"type": "plain_text", "text": "📍 Onsite Slack Bot", "emoji": True}},
-            {"type": "divider"},
-            {"type": "section", "text": {"type": "mrkdwn", "text": status_text}},
-            {"type": "section", "text": {"type": "mrkdwn", "text": schedule_text}},
-            {"type": "section", "text": {"type": "mrkdwn", "text": "Set schedule with `/onsite-schedule` command. Admins can override with `/onsite-admin`."}},
-            {"type": "divider"},
-            {"type": "section", "text": {"type": "mrkdwn", "text": "*Where are you today broski?*"}},
-            {"type": "actions", "elements": buttons},
-            {"type": "divider"},
-            {"type": "context", "elements": [{"type": "mrkdwn", "text": f"<{DASHBOARD_URL}?date={today_str()}|View team dashboard> · Use `/onsite <site>` anytime."}]},
-        ]
+    )
 
     return {
         "type": "home",
         "blocks": blocks,
     }
-
-
-
 
 def publish_home(client, user_id: str):
     client.views_publish(user_id=user_id, view=build_app_home(user_id))
@@ -305,6 +396,48 @@ def handle_home_button(ack, body, client, logger):
     except Exception:
         logger.exception("Failed App Home check-in")
 
+
+@slack_app.action("refresh_app_home")
+def handle_refresh_app_home_button(ack, body, client, logger):
+    ack()
+    try:
+        publish_home(client, body["user"]["id"])
+    except Exception:
+        logger.exception("Failed to refresh App Home")
+
+
+@slack_app.event("message")
+def handle_passive_onsite_message(event, client, logger):
+    if event.get("channel") != SUMMARY_CHANNEL_ID:
+        return
+    if event.get("subtype") or event.get("bot_id") or event.get("user") is None:
+        return
+
+    site = extract_passive_onsite_site(event.get("text") or "")
+    if not site:
+        return
+
+    user_id = event["user"]
+    try:
+        current = get_current_checkin(user_id)
+        if current and current.get("work_date") == today_str() and current.get("site") == site:
+            return
+
+        display_name, image_url = fetch_user_profile(client, user_id)
+        upsert_user(user_id, display_name, image_url)
+        record_checkin(
+            user_id,
+            site,
+            today_str(),
+            now_local().isoformat(timespec="seconds"),
+            source="passive_message",
+        )
+        upsert_summary_message(client)
+        publish_home(client, user_id)
+    except Exception:
+        logger.exception("Failed passive onsite check-in")
+
+
 @slack_app.command("/onsite-refresh")
 def handle_refresh(ack, body, client, logger):
     ack({"response_type": "ephemeral", "text": "Refreshing App Home..."})
@@ -324,7 +457,7 @@ def handle_onsite(ack, body, client, logger):
         ack({"response_type": "ephemeral", "text": msg})
         return
 
-    site = normalize_site(text)
+    site = normalize_site(text) or extract_passive_onsite_site(text)
     if not site:
         ack({
             "response_type": "ephemeral",
@@ -338,7 +471,7 @@ def handle_onsite(ack, body, client, logger):
         record_checkin(user_id, site, today_str(), now_local().isoformat(timespec="seconds"), source="slash_command")
         upsert_summary_message(client)
         publish_home(client, user_id)
-        ack({"response_type": "ephemeral", "text": f"{SITE_EMOJI.get(site, '📍')} Checked in as *{site}*. <{DASHBOARD_URL}?date={today_str()}|View dashboard>."})
+        ack({"response_type": "ephemeral", "text": f"{SITE_EMOJI.get(site, '📍')} Checked in as *{site}*. Open the Onsite Slack Bot App Home for the team view."})
     except Exception as exc:
         logger.exception("Error handling /onsite")
         ack({"response_type": "ephemeral", "text": f"⚠️ Something went wrong: {exc}"})
@@ -688,40 +821,13 @@ def handle_open_admin_modal(ack, body, client, logger):
     except Exception:
         logger.exception("Failed to open admin modal from App Home")
 
-# ---- Flask dashboard -------------------------------------------------------
-
-flask_app = Flask(__name__)
-
-
-def register_dashboard_routes():
-    from dashboard import dashboard_bp
-    flask_app.register_blueprint(dashboard_bp)
-
-@flask_app.route("/favicon.ico")
-def favicon():
-    return flask_app.send_static_file("favicon.ico")
-
-@flask_app.route("/apple-touch-icon.png")
-@flask_app.route("/apple-touch-icon-precomposed.png")
-def apple_touch_icon():
-    return flask_app.send_static_file("apple-touch-icon.png")
-
-
 # ---- Entrypoint ------------------------------------------------------------
 
 def main():
     init_db()
-    register_dashboard_routes()
 
     if SEED_TEST_USERS:
         seed_test_users()
-
-    dashboard_thread = threading.Thread(
-        target=lambda: flask_app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False),
-        daemon=True,
-    )
-    dashboard_thread.start()
-    print("✅ Dashboard running at http://localhost:5000/dashboard")
 
     start_scheduler(slack_app.client, after_reset_callback=upsert_summary_message)
     print("✅ Daily scheduler running")
