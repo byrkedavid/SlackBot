@@ -1,0 +1,6 @@
+{
+  "manifest": "manifest.ts",
+  "hooks": {
+    "get-hooks": "deno eval 'import hooks from \"./slack-hooks.json\" with { type: \"json\" }; console.log(JSON.stringify(hooks))'"
+  }
+}
