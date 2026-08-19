@@ -21,6 +21,7 @@ export default Manifest({
     "datastore:write",
     "users:read",
     "canvases:write",
+    "triggers:read",
     "triggers:write",
   ],
 });
