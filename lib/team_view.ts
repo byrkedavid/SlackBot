@@ -1,5 +1,6 @@
 import AppState from "../datastores/app_state.ts";
 import CurrentCheckins from "../datastores/current_checkins.ts";
+import Users from "../datastores/users.ts";
 import { friendlyDate, localDate, SITE_EMOJI, SITES } from "./constants.ts";
 
 export async function queryAll(client: any, datastore: string) {
@@ -14,7 +15,7 @@ export async function queryAll(client: any, datastore: string) {
   return items;
 }
 
-function buildTeamView(checkins: any[]) {
+function buildTeamView(checkins: any[], users: any[]) {
   const today = localDate();
   const todays = checkins.filter((row) => row.work_date === today);
   const grouped = new Map<string, any[]>();
@@ -25,12 +26,22 @@ function buildTeamView(checkins: any[]) {
   }
   for (const rows of grouped.values()) rows.sort((a, b) => String(a.display_name).localeCompare(String(b.display_name)));
 
+  const checked = new Set(todays.map((row) => row.user_id));
+  const unset = users.filter((u) => !checked.has(u.user_id)).sort((a, b) => String(a.display_name).localeCompare(String(b.display_name)));
+
   let total = 0;
   const blocks: any[] = [
     { type: "header", text: { type: "plain_text", text: `📍 Onsite — ${friendlyDate()}`, emoji: true } },
     { type: "divider" },
   ];
-  const markdown: string[] = [`# 📍 Onsite — ${friendlyDate()}`, ""];
+  const markdown: string[] = [
+    `# 📍 Onsite — ${friendlyDate()}`,
+    "",
+    `${todays.length} checked in · ${users.length} tracked users`,
+    "",
+    "---",
+    "",
+  ];
 
   for (const [site, rows] of grouped.entries()) {
     if (!rows.length) continue;
@@ -39,8 +50,8 @@ function buildTeamView(checkins: any[]) {
       type: "section",
       text: { type: "mrkdwn", text: `${SITE_EMOJI[site] || "📍"} *${site}  |  ${rows.length} checked in*\n${rows.map((r) => `• <@${r.user_id}>`).join("\n")}` },
     });
-    markdown.push(`## ${SITE_EMOJI[site] || "📍"} ${site} · ${rows.length} checked in`);
-    markdown.push(...rows.map((r) => `- <@${r.user_id}>`), "");
+    markdown.push(`## ${SITE_EMOJI[site] || "📍"} ${site} · ${rows.length}`);
+    markdown.push(...rows.map((r) => `- ![](@${r.user_id})`), "");
   }
 
   if (!total) {
@@ -48,11 +59,20 @@ function buildTeamView(checkins: any[]) {
     markdown.push("_No one has checked in yet today._", "");
   }
 
+  if (unset.length) {
+    blocks.push(
+      { type: "divider" },
+      { type: "section", text: { type: "mrkdwn", text: `❓ *No location set today  |  ${unset.length}*\n${unset.map((u) => `• <@${u.user_id}>`).join("\n")}` } },
+    );
+    markdown.push(`## ❓ No location set today · ${unset.length}`);
+    markdown.push(...unset.map((u) => `- ![](@${u.user_id})`), "");
+  }
+
   blocks.push(
     { type: "divider" },
-    { type: "context", elements: [{ type: "mrkdwn", text: `${total} checked in today · resets automatically at midnight ET` }] },
+    { type: "context", elements: [{ type: "mrkdwn", text: `${total} checked in · ${users.length} tracked users · resets automatically at midnight ET` }] },
   );
-  markdown.push("---", `${total} checked in today · resets automatically at midnight ET`);
+  markdown.push("---", "_Updates automatically · daily locations reset at midnight ET._");
 
   return {
     total,
@@ -63,10 +83,12 @@ function buildTeamView(checkins: any[]) {
 }
 
 export async function upsertTeamViews(client: any, channelId: string) {
-  const checkins = await queryAll(client, CurrentCheckins.name);
-  const view = buildTeamView(checkins);
+  const [checkins, users] = await Promise.all([
+    queryAll(client, CurrentCheckins.name),
+    queryAll(client, Users.name),
+  ]);
+  const view = buildTeamView(checkins, users);
 
-  // Keep one living channel message as a lightweight fallback.
   const summaryKey = `summary:${channelId}`;
   const summaryState = await client.apps.datastore.get({ datastore: AppState.name, id: summaryKey });
   let summaryTs = summaryState.ok && summaryState.item?.value ? summaryState.item.value : undefined;
@@ -82,8 +104,6 @@ export async function upsertTeamViews(client: any, channelId: string) {
     if (!save.ok) throw new Error(save.error || "Could not save summary timestamp");
   }
 
-  // Create a dedicated Onsite Canvas tab the first time this channel is used,
-  // then replace its entire content on every check-in/reset.
   const canvasKey = `canvas:${channelId}`;
   const canvasState = await client.apps.datastore.get({ datastore: AppState.name, id: canvasKey });
   let canvasId = canvasState.ok && canvasState.item?.value ? canvasState.item.value : undefined;
@@ -91,10 +111,7 @@ export async function upsertTeamViews(client: any, channelId: string) {
   if (canvasId) {
     const edit = await client.canvases.edit({
       canvas_id: canvasId,
-      changes: [{
-        operation: "replace",
-        document_content: { type: "markdown", markdown: view.markdown },
-      }],
+      changes: [{ operation: "replace", document_content: { type: "markdown", markdown: view.markdown } }],
     });
     if (!edit.ok) canvasId = undefined;
   }
