@@ -1,7 +1,7 @@
 import { SlackFunction } from "deno-slack-sdk/mod.ts";
 import { ResetDailyFunction } from "./definition.ts";
 import CurrentCheckins from "../../datastores/current_checkins.ts";
-import { queryAll, upsertTeamViews } from "../../lib/team_view.ts";
+import { queryAll, upsertTeamCanvas } from "../../lib/team_view.ts";
 
 export default SlackFunction(ResetDailyFunction, async ({ inputs, client }) => {
   const rows = await queryAll(client, CurrentCheckins.name);
@@ -14,7 +14,7 @@ export default SlackFunction(ResetDailyFunction, async ({ inputs, client }) => {
   }
 
   try {
-    await upsertTeamViews(client, inputs.channel_id);
+    await upsertTeamCanvas(client, inputs.channel_id);
     return { outputs: {} };
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
