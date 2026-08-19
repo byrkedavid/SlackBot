@@ -63,7 +63,19 @@ function buildTeamView(checkins: any[], users: any[]) {
   return markdown.join("\n");
 }
 
+async function removeLegacySummary(client: any, channelId: string) {
+  const summaryKey = `summary:${channelId}`;
+  const summaryState = await client.apps.datastore.get({ datastore: AppState.name, id: summaryKey });
+  const summaryTs = summaryState.ok && summaryState.item?.value ? summaryState.item.value as string : undefined;
+  if (!summaryTs) return;
+
+  await client.chat.delete({ channel: channelId, ts: summaryTs });
+  await client.apps.datastore.delete({ datastore: AppState.name, id: summaryKey });
+}
+
 export async function upsertTeamCanvas(client: any, channelId: string) {
+  await removeLegacySummary(client, channelId);
+
   const [checkins, users] = await Promise.all([
     queryAll(client, CurrentCheckins.name),
     queryAll(client, Users.name),
