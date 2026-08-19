@@ -76,10 +76,10 @@ function buildTeamView(checkins: any[], users: any[]) {
   const totalPocs = todays.filter((row) => row.is_poc === true).length;
   const totalBuilders = todays.length - totalPocs;
 
-  const markdown: string[] = [
-    `# 📍 Onsite — ${friendlyDate()}`,
-    "",
-    `**Total: ${todays.length} onsite | ${totalBuilders} Builders | ${totalPocs} POCs**`,
+const markdown: string[] = [
+  `**${friendlyDate()}**`,
+  "",
+  `**Total: ${todays.length} onsite | ${totalBuilders} Builders | ${totalPocs} POCs**`,
     "",
     "---",
     "",
