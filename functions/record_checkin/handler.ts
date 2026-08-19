@@ -17,7 +17,7 @@ async function queryAll(client: any, datastore: string) {
     });
     if (!resp.ok) throw new Error(resp.error || `Failed to query ${datastore}`);
     items.push(...(resp.items || []));
-    cursor = resp.next_cursor || undefined;
+    cursor = resp.response_metadata?.next_cursor || undefined;
   } while (cursor);
   return items;
 }
