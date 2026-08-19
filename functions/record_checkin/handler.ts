@@ -1,86 +1,70 @@
 import { SlackFunction } from "deno-slack-sdk/mod.ts";
+import { TriggerTypes } from "deno-slack-api/mod.ts";
 import { RecordCheckinFunction } from "./definition.ts";
 import CurrentCheckins from "../../datastores/current_checkins.ts";
 import CheckinHistory from "../../datastores/checkin_history.ts";
 import Users from "../../datastores/users.ts";
 import AppState from "../../datastores/app_state.ts";
-import { friendlyDate, localDate, SITE_EMOJI, SITES } from "../../lib/constants.ts";
+import { localDate, SITES } from "../../lib/constants.ts";
+import { upsertTeamViews } from "../../lib/team_view.ts";
 
-async function queryAll(client: any, datastore: string) {
-  const items: any[] = [];
-  let cursor: string | undefined;
-  do {
-    const resp = await client.apps.datastore.query({ datastore, limit: 100, ...(cursor ? { cursor } : {}) });
-    if (!resp.ok) throw new Error(resp.error || `Failed to query ${datastore}`);
-    items.push(...(resp.items || []));
-    cursor = resp.next_cursor || undefined;
-  } while (cursor);
-  return items;
+function nextEasternMidnightIso() {
+  const now = new Date();
+  const dateParts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const values = Object.fromEntries(dateParts.map((p) => [p.type, p.value]));
+  const noonUtc = new Date(`${values.year}-${values.month}-${values.day}T12:00:00Z`);
+  noonUtc.setUTCDate(noonUtc.getUTCDate() + 1);
+  const nextParts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(noonUtc);
+  const next = Object.fromEntries(nextParts.map((p) => [p.type, p.value]));
+
+  const offsetParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    timeZoneName: "longOffset",
+  }).formatToParts(now);
+  const zoneName = offsetParts.find((p) => p.type === "timeZoneName")?.value || "GMT-04:00";
+  const offset = zoneName.replace("GMT", "");
+  return `${next.year}-${next.month}-${next.day}T00:00:00${offset}`;
 }
 
-async function upsertSummary(client: any, channelId: string) {
-  const today = localDate();
-  const [checkins, users] = await Promise.all([
-    queryAll(client, CurrentCheckins.name),
-    queryAll(client, Users.name),
-  ]);
-  const todays = checkins.filter((row) => row.work_date === today);
-  const grouped = new Map<string, any[]>();
-  for (const site of SITES) grouped.set(site, []);
-  for (const row of todays) {
-    if (!grouped.has(row.site)) grouped.set(row.site, []);
-    grouped.get(row.site)!.push(row);
-  }
-  for (const rows of grouped.values()) rows.sort((a, b) => String(a.display_name).localeCompare(String(b.display_name)));
+async function ensureMidnightResetTrigger(client: any, channelId: string) {
+  const key = `reset_trigger:${channelId}`;
+  const existing = await client.apps.datastore.get({ datastore: AppState.name, id: key });
+  if (existing.ok && existing.item?.value) return;
 
-  const checked = new Set(todays.map((row) => row.user_id));
-  const unset = users.filter((u) => !checked.has(u.user_id)).sort((a, b) => String(a.display_name).localeCompare(String(b.display_name)));
-  const blocks: any[] = [
-    { type: "header", text: { type: "plain_text", text: `📍 Onsite — ${friendlyDate()}`, emoji: true } },
-    { type: "divider" },
-  ];
+  const created = await client.workflows.triggers.create({
+    type: TriggerTypes.Scheduled,
+    name: `Onsite midnight reset ${channelId}`,
+    description: "Clear today's onsite locations at midnight Eastern Time.",
+    workflow: "#/workflows/onsite_midnight_reset",
+    inputs: {
+      channel_id: { value: channelId },
+    },
+    schedule: {
+      start_time: nextEasternMidnightIso(),
+      timezone: "America/New_York",
+      frequency: { type: "daily", repeats_every: 1 },
+    },
+  });
 
-  let total = 0;
-  for (const [site, rows] of grouped.entries()) {
-    if (!rows.length) continue;
-    total += rows.length;
-    blocks.push({
-      type: "section",
-      text: { type: "mrkdwn", text: `${SITE_EMOJI[site] || "📍"} *${site}  |  ${rows.length} checked in*\n${rows.map((r) => `• <@${r.user_id}>`).join("\n")}` },
-    });
-  }
-  if (!total) blocks.push({ type: "section", text: { type: "mrkdwn", text: "_No one has checked in yet._" } });
-  if (unset.length) {
-    blocks.push(
-      { type: "divider" },
-      { type: "section", text: { type: "mrkdwn", text: `❓ *No location set today  |  ${unset.length}*\n${unset.map((u) => `• <@${u.user_id}>`).join("\n")}` } },
-    );
-  }
-  blocks.push(
-    { type: "divider" },
-    { type: "context", elements: [{ type: "mrkdwn", text: `${total} checked in · ${users.length} tracked users · updates automatically` }] },
-  );
-
-  const text = `Onsite team view for ${friendlyDate()}: ${total} checked in.`;
-  const stateKey = `summary:${channelId}`;
-  const state = await client.apps.datastore.get({ datastore: AppState.name, id: stateKey });
-  let ts = state.ok && state.item?.value ? state.item.value : undefined;
-  if (ts) {
-    const update = await client.chat.update({ channel: channelId, ts, text, blocks });
-    if (!update.ok) ts = undefined;
-  }
-  if (!ts) {
-    const post = await client.chat.postMessage({ channel: channelId, text, blocks });
-    if (!post.ok || !post.ts) throw new Error(post.error || "Could not post onsite summary");
-    ts = post.ts;
-    const save = await client.apps.datastore.put({ datastore: AppState.name, item: { key: stateKey, value: ts } });
-    if (!save.ok) throw new Error(save.error || "Could not save summary timestamp");
-  }
-  return ts as string;
+  const triggerId = created.trigger?.id;
+  if (!created.ok || !triggerId) throw new Error(created.error || "Could not create midnight reset trigger");
+  const save = await client.apps.datastore.put({ datastore: AppState.name, item: { key, value: triggerId } });
+  if (!save.ok) throw new Error(save.error || "Could not save reset trigger ID");
 }
 
 export default SlackFunction(RecordCheckinFunction, async ({ inputs, client }) => {
   if (!SITES.includes(inputs.site as typeof SITES[number])) return { error: `Invalid site: ${inputs.site}` };
+
   const profileResp = await client.users.info({ user: inputs.user_id });
   if (!profileResp.ok || !profileResp.user) return { error: profileResp.error || "Could not load Slack user" };
   const profile = profileResp.user.profile || {};
@@ -96,8 +80,10 @@ export default SlackFunction(RecordCheckinFunction, async ({ inputs, client }) =
   ]);
   const failed = saves.find((r) => !r.ok);
   if (failed) return { error: failed.error || "Could not save check-in" };
+
   try {
-    const summaryTs = await upsertSummary(client, inputs.channel_id);
+    await ensureMidnightResetTrigger(client, inputs.channel_id);
+    const { summaryTs } = await upsertTeamViews(client, inputs.channel_id);
     return { outputs: { summary_ts: summaryTs } };
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
