@@ -3,6 +3,32 @@ import CurrentCheckins from "../datastores/current_checkins.ts";
 import Users from "../datastores/users.ts";
 import { friendlyDate, localDate, SITE_EMOJI, SITES } from "./constants.ts";
 
+// Local layout helper. Flip to true while running `slack run` to preview
+// a busy multi-site Canvas, then set it back to false before committing/deploying.
+const DEMO_PREVIEW = false;
+
+const DEMO_CHECKINS = [
+  { user_id: "DEMO_1", display_name: "Alex Johnson", site: "ATL55", is_poc: true },
+  { user_id: "DEMO_2", display_name: "Mike Davis", site: "ATL55", is_poc: false },
+  { user_id: "DEMO_3", display_name: "Chris Lee", site: "ATL55", is_poc: false },
+  { user_id: "DEMO_4", display_name: "Ryan Clark", site: "ATL77", is_poc: true },
+  { user_id: "DEMO_5", display_name: "Kevin White", site: "ATL77", is_poc: false },
+  { user_id: "DEMO_6", display_name: "Sarah Hall", site: "ATL77", is_poc: false },
+  { user_id: "DEMO_7", display_name: "John Smith", site: "ATL88", is_poc: false },
+  { user_id: "DEMO_8", display_name: "Bryan Young", site: "ATL88", is_poc: false },
+  { user_id: "DEMO_9", display_name: "Hunter Knox", site: "REMOTE", is_poc: true },
+];
+
+const DEMO_USERS = [
+  ...DEMO_CHECKINS.map((row) => ({
+    user_id: row.user_id,
+    display_name: row.display_name,
+    is_poc: row.is_poc,
+  })),
+  { user_id: "DEMO_10", display_name: "Matt Green", is_poc: false },
+  { user_id: "DEMO_11", display_name: "Jeff Bailey", is_poc: true },
+];
+
 export async function queryAll(client: any, datastore: string) {
   const items: any[] = [];
   let cursor: string | undefined;
@@ -15,13 +41,23 @@ export async function queryAll(client: any, datastore: string) {
   return items;
 }
 
-function personLine(person: any) {
-  return `- ![](@${person.user_id})`;
+function personInline(person: any) {
+  return String(person.user_id).startsWith("DEMO_")
+    ? person.display_name
+    : `![](@${person.user_id})`;
 }
 
 function buildTeamView(checkins: any[], users: any[]) {
   const today = localDate();
-  const todays = checkins.filter((row) => row.work_date === today);
+
+  let todays = checkins.filter((row) => row.work_date === today);
+  let viewUsers = users;
+
+  if (DEMO_PREVIEW) {
+    todays = DEMO_CHECKINS.map((row) => ({ ...row, work_date: today }));
+    viewUsers = DEMO_USERS;
+  }
+
   const grouped = new Map<string, any[]>();
   for (const site of SITES) grouped.set(site, []);
   for (const row of todays) {
@@ -33,7 +69,7 @@ function buildTeamView(checkins: any[], users: any[]) {
   }
 
   const checked = new Set(todays.map((row) => row.user_id));
-  const unset = users
+  const unset = viewUsers
     .filter((u) => !checked.has(u.user_id))
     .sort((a, b) => String(a.display_name).localeCompare(String(b.display_name)));
 
@@ -43,7 +79,7 @@ function buildTeamView(checkins: any[], users: any[]) {
   const markdown: string[] = [
     `# 📍 Onsite — ${friendlyDate()}`,
     "",
-    `**Total: ${todays.length} onsite · ${totalBuilders} Builders · ${totalPocs} POCs**`,
+    `**Total: ${todays.length} onsite | ${totalBuilders} Builders | ${totalPocs} POCs**`,
     "",
     "---",
     "",
@@ -57,11 +93,10 @@ function buildTeamView(checkins: any[], users: any[]) {
     const pocs = rows.filter((row) => row.is_poc === true);
     const builders = rows.filter((row) => row.is_poc !== true);
 
-    markdown.push(`## ${SITE_EMOJI[site] || "📍"} ${site} · ${rows.length}`);
-    markdown.push(`**POCs (${pocs.length})**`);
-    markdown.push(...(pocs.length ? pocs.map(personLine) : ["- None"]), "");
-    markdown.push(`**Builders (${builders.length})**`);
-    markdown.push(...(builders.length ? builders.map(personLine) : ["- None"]), "");
+    markdown.push(`## ${SITE_EMOJI[site] || "📍"} ${site} (${rows.length})`);
+    markdown.push(`- **POCs:** ${pocs.length ? pocs.map(personInline).join(", ") : "None"}`);
+    markdown.push(`- **Builders:** ${builders.length ? builders.map(personInline).join(", ") : "None"}`);
+    markdown.push("");
   }
 
   if (!total) {
@@ -71,13 +106,15 @@ function buildTeamView(checkins: any[], users: any[]) {
   if (unset.length) {
     const unsetPocs = unset.filter((u) => u.is_poc === true);
     const unsetBuilders = unset.filter((u) => u.is_poc !== true);
-    markdown.push(`## ❓ No location set today · ${unset.length}`);
+
+    markdown.push(`## ❓ No location set today (${unset.length})`);
     if (unsetPocs.length) {
-      markdown.push(`**POCs (${unsetPocs.length})**`, ...unsetPocs.map(personLine), "");
+      markdown.push(`- **POCs:** ${unsetPocs.map(personInline).join(", ")}`);
     }
     if (unsetBuilders.length) {
-      markdown.push(`**Builders (${unsetBuilders.length})**`, ...unsetBuilders.map(personLine), "");
+      markdown.push(`- **Builders:** ${unsetBuilders.map(personInline).join(", ")}`);
     }
+    markdown.push("");
   }
 
   markdown.push("---", "_Updates automatically · daily locations reset at midnight ET._");
