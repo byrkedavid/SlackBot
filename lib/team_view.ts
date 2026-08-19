@@ -15,6 +15,10 @@ export async function queryAll(client: any, datastore: string) {
   return items;
 }
 
+function personLine(person: any) {
+  return `- ![](@${person.user_id})`;
+}
+
 function buildTeamView(checkins: any[], users: any[]) {
   const today = localDate();
   const todays = checkins.filter((row) => row.work_date === today);
@@ -33,10 +37,13 @@ function buildTeamView(checkins: any[], users: any[]) {
     .filter((u) => !checked.has(u.user_id))
     .sort((a, b) => String(a.display_name).localeCompare(String(b.display_name)));
 
+  const totalPocs = todays.filter((row) => row.is_poc === true).length;
+  const totalBuilders = todays.length - totalPocs;
+
   const markdown: string[] = [
     `# 📍 Onsite — ${friendlyDate()}`,
     "",
-    `${todays.length} checked in · ${users.length} tracked users`,
+    `**Total: ${todays.length} onsite · ${totalBuilders} Builders · ${totalPocs} POCs**`,
     "",
     "---",
     "",
@@ -46,8 +53,15 @@ function buildTeamView(checkins: any[], users: any[]) {
   for (const [site, rows] of grouped.entries()) {
     if (!rows.length) continue;
     total += rows.length;
+
+    const pocs = rows.filter((row) => row.is_poc === true);
+    const builders = rows.filter((row) => row.is_poc !== true);
+
     markdown.push(`## ${SITE_EMOJI[site] || "📍"} ${site} · ${rows.length}`);
-    markdown.push(...rows.map((r) => `- ![](@${r.user_id})`), "");
+    markdown.push(`**POCs (${pocs.length})**`);
+    markdown.push(...(pocs.length ? pocs.map(personLine) : ["- None"]), "");
+    markdown.push(`**Builders (${builders.length})**`);
+    markdown.push(...(builders.length ? builders.map(personLine) : ["- None"]), "");
   }
 
   if (!total) {
@@ -55,32 +69,35 @@ function buildTeamView(checkins: any[], users: any[]) {
   }
 
   if (unset.length) {
+    const unsetPocs = unset.filter((u) => u.is_poc === true);
+    const unsetBuilders = unset.filter((u) => u.is_poc !== true);
     markdown.push(`## ❓ No location set today · ${unset.length}`);
-    markdown.push(...unset.map((u) => `- ![](@${u.user_id})`), "");
+    if (unsetPocs.length) {
+      markdown.push(`**POCs (${unsetPocs.length})**`, ...unsetPocs.map(personLine), "");
+    }
+    if (unsetBuilders.length) {
+      markdown.push(`**Builders (${unsetBuilders.length})**`, ...unsetBuilders.map(personLine), "");
+    }
   }
 
   markdown.push("---", "_Updates automatically · daily locations reset at midnight ET._");
   return markdown.join("\n");
 }
 
-async function removeLegacySummary(client: any, channelId: string) {
-  const summaryKey = `summary:${channelId}`;
-  const summaryState = await client.apps.datastore.get({ datastore: AppState.name, id: summaryKey });
-  const summaryTs = summaryState.ok && summaryState.item?.value ? summaryState.item.value as string : undefined;
-  if (!summaryTs) return;
-
-  await client.chat.delete({ channel: channelId, ts: summaryTs });
-  await client.apps.datastore.delete({ datastore: AppState.name, id: summaryKey });
-}
-
 export async function upsertTeamCanvas(client: any, channelId: string) {
-  await removeLegacySummary(client, channelId);
-
   const [checkins, users] = await Promise.all([
     queryAll(client, CurrentCheckins.name),
     queryAll(client, Users.name),
   ]);
   const markdown = buildTeamView(checkins, users);
+
+  // Remove any legacy living summary message from Messages. Canvas is the roster now.
+  const summaryKey = `summary:${channelId}`;
+  const summaryState = await client.apps.datastore.get({ datastore: AppState.name, id: summaryKey });
+  if (summaryState.ok && summaryState.item?.value) {
+    await client.chat.delete({ channel: channelId, ts: summaryState.item.value });
+    await client.apps.datastore.delete({ datastore: AppState.name, id: summaryKey });
+  }
 
   const canvasKey = `canvas:${channelId}`;
   const canvasState = await client.apps.datastore.get({ datastore: AppState.name, id: canvasKey });
