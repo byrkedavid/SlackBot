@@ -1,5 +1,6 @@
 import { Manifest } from "deno-slack-sdk/mod.ts";
 import CheckInWorkflow from "./workflows/check_in.ts";
+import ResetDailyWorkflow from "./workflows/reset_daily.ts";
 import CurrentCheckins from "./datastores/current_checkins.ts";
 import CheckinHistory from "./datastores/checkin_history.ts";
 import Users from "./datastores/users.ts";
@@ -9,7 +10,16 @@ export default Manifest({
   name: "Onsite",
   description: "Slack-native onsite location check-ins and a living team view.",
   outgoingDomains: [],
-  workflows: [CheckInWorkflow],
+  workflows: [CheckInWorkflow, ResetDailyWorkflow],
   datastores: [CurrentCheckins, CheckinHistory, Users, AppState],
-  botScopes: ["commands", "chat:write", "chat:write.public", "datastore:read", "datastore:write", "users:read"],
+  botScopes: [
+    "commands",
+    "chat:write",
+    "chat:write.public",
+    "datastore:read",
+    "datastore:write",
+    "users:read",
+    "canvases:write",
+    "triggers:write",
+  ],
 });
