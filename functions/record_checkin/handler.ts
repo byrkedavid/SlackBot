@@ -5,7 +5,7 @@ import CurrentCheckins from "../../datastores/current_checkins.ts";
 import CheckinHistory from "../../datastores/checkin_history.ts";
 import Users from "../../datastores/users.ts";
 import AppState from "../../datastores/app_state.ts";
-import { localDate, SITES } from "../../lib/constants.ts";
+import { isPocSlackUsername, localDate, SITES } from "../../lib/constants.ts";
 import { upsertTeamCanvas } from "../../lib/team_view.ts";
 
 function nextEasternTimeIso(hour: number) {
@@ -54,10 +54,27 @@ async function saveState(client: any, key: string, value: string) {
   if (!resp.ok) throw new Error(resp.error || `Could not save ${key}`);
 }
 
+async function deleteState(client: any, key: string) {
+  await client.apps.datastore.delete({ datastore: AppState.name, id: key });
+}
+
+async function triggerStillExists(client: any, triggerId?: string) {
+  if (!triggerId) return false;
+  const resp = await client.workflows.triggers.permissions.list({ trigger_id: triggerId });
+  if (resp.ok) return true;
+  if (resp.error === "trigger_not_found") return false;
+  throw new Error(resp.error || `Could not verify trigger ${triggerId}`);
+}
+
 async function ensureCheckinShortcut(client: any, channelId: string) {
   const urlKey = `checkin_shortcut_url:${channelId}`;
+  const idKey = `checkin_shortcut_id:${channelId}`;
   const existingUrl = await getState(client, urlKey);
-  if (existingUrl) return existingUrl;
+  const existingId = await getState(client, idKey);
+
+  if (existingUrl && await triggerStillExists(client, existingId)) return existingUrl;
+  if (existingUrl) await deleteState(client, urlKey);
+  if (existingId) await deleteState(client, idKey);
 
   const created = await client.workflows.triggers.create({
     type: TriggerTypes.Shortcut,
@@ -73,20 +90,21 @@ async function ensureCheckinShortcut(client: any, channelId: string) {
   });
 
   const shortcutUrl = created.trigger?.shortcut_url;
-  if (!created.ok || !shortcutUrl) {
+  const triggerId = created.trigger?.id;
+  if (!created.ok || !shortcutUrl || !triggerId) {
     throw new Error(created.error || "Could not create channel check-in shortcut");
   }
 
   await saveState(client, urlKey, shortcutUrl);
-  if (created.trigger?.id) {
-    await saveState(client, `checkin_shortcut_id:${channelId}`, created.trigger.id);
-  }
+  await saveState(client, idKey, triggerId);
   return shortcutUrl;
 }
 
 async function ensureDailyPromptTrigger(client: any, channelId: string) {
   const key = `daily_prompt_trigger:${channelId}`;
-  if (await getState(client, key)) return;
+  const existingId = await getState(client, key);
+  if (await triggerStillExists(client, existingId)) return;
+  if (existingId) await deleteState(client, key);
 
   const created = await client.workflows.triggers.create({
     type: TriggerTypes.Scheduled,
@@ -110,7 +128,9 @@ async function ensureDailyPromptTrigger(client: any, channelId: string) {
 
 async function ensureMidnightResetTrigger(client: any, channelId: string) {
   const key = `reset_trigger:${channelId}`;
-  if (await getState(client, key)) return;
+  const existingId = await getState(client, key);
+  if (await triggerStillExists(client, existingId)) return;
+  if (existingId) await deleteState(client, key);
 
   const created = await client.workflows.triggers.create({
     type: TriggerTypes.Scheduled,
@@ -144,6 +164,8 @@ export default SlackFunction(RecordCheckinFunction, async ({ inputs, client }) =
 
   const profile = profileResp.user.profile || {};
   const displayName = profile.display_name || profile.real_name || profileResp.user.real_name || inputs.user_id;
+  const slackUsername = String(profileResp.user.name || "").toLowerCase();
+  const isPoc = isPocSlackUsername(slackUsername);
   const imageUrl = profile.image_72 || profile.image_48 || "";
   const now = new Date().toISOString();
   const workDate = localDate();
@@ -151,11 +173,26 @@ export default SlackFunction(RecordCheckinFunction, async ({ inputs, client }) =
   const saves = await Promise.all([
     client.apps.datastore.put({
       datastore: Users.name,
-      item: { user_id: inputs.user_id, display_name: displayName, image_url: imageUrl, updated_at: now },
+      item: {
+        user_id: inputs.user_id,
+        display_name: displayName,
+        slack_username: slackUsername,
+        is_poc: isPoc,
+        image_url: imageUrl,
+        updated_at: now,
+      },
     }),
     client.apps.datastore.put({
       datastore: CurrentCheckins.name,
-      item: { user_id: inputs.user_id, display_name: displayName, work_date: workDate, site: inputs.site, updated_at: now },
+      item: {
+        user_id: inputs.user_id,
+        display_name: displayName,
+        slack_username: slackUsername,
+        is_poc: isPoc,
+        work_date: workDate,
+        site: inputs.site,
+        updated_at: now,
+      },
     }),
     client.apps.datastore.put({
       datastore: CheckinHistory.name,
